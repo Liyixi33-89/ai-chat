@@ -1,0 +1,386 @@
+.message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.message-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #666;
+  text-align: center;
+  padding: 2rem;
+}
+
+.empty-icon {
+  font-size: 4rem;
+  color: #1890ff;
+  margin-bottom: 1rem;
+}
+
+.message-list-empty h2 {
+  font-size: 1.5rem;
+  color: #333;
+  margin-bottom: 0.5rem;
+}
+
+.message-list-empty p {
+  font-size: 1rem;
+  color: #888;
+  margin-bottom: 1.5rem;
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.suggestion-item {
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 100%);
+  border-radius: 1.25rem;
+  font-size: 0.875rem;
+  color: #1890ff;
+  border: 1px solid #d6e4ff;
+}
+
+.message-item {
+  display: flex;
+  gap: 0.75rem;
+  max-width: 85%;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.user-message {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.assistant-message {
+  align-self: flex-start;
+}
+
+.message-avatar {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.message-content {
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  max-width: calc(100% - 3rem);
+  word-break: break-word;
+}
+
+.user-message .message-content {
+  background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+  color: white;
+  border-bottom-right-radius: 0.25rem;
+}
+
+.assistant-message .message-content {
+  background: #f5f5f5;
+  color: #333;
+  border-bottom-left-radius: 0.25rem;
+}
+
+.message-text {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.cursor-blink {
+  animation: blink 1s infinite;
+  font-weight: bold;
+  color: #1890ff;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* ==================== Markdown 样式 ==================== */
+.markdown-content {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+.markdown-content p {
+  margin: 0 0 0.75rem 0;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* 标题样式 */
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #333;
+}
+
+.markdown-content h1 { font-size: 1.5rem; }
+.markdown-content h2 { font-size: 1.3rem; }
+.markdown-content h3 { font-size: 1.15rem; }
+.markdown-content h4 { font-size: 1rem; }
+
+/* 列表样式 */
+.markdown-content ul,
+.markdown-content ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.markdown-content li {
+  margin: 0.25rem 0;
+}
+
+.markdown-content li > p {
+  margin: 0;
+}
+
+/* 引用块样式 */
+.markdown-content blockquote {
+  margin: 0.75rem 0;
+  padding: 0.5rem 1rem;
+  border-left: 4px solid #1890ff;
+  background: rgba(24, 144, 255, 0.08);
+  border-radius: 0 0.5rem 0.5rem 0;
+}
+
+.markdown-content blockquote p {
+  margin: 0;
+  color: #555;
+}
+
+/* 行内代码样式 */
+.inline-code {
+  padding: 0.15rem 0.4rem;
+  margin: 0 0.2rem;
+  background: rgba(24, 144, 255, 0.1);
+  color: #d63384;
+  border-radius: 0.25rem;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.875em;
+}
+
+/* 代码块包装器 */
+.code-block-wrapper {
+  margin: 0.75rem 0;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: #1e1e1e;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background: #2d2d2d;
+  border-bottom: 1px solid #404040;
+}
+
+.code-language {
+  font-size: 0.75rem;
+  color: #888;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.copy-button {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  background: transparent;
+  border: 1px solid #555;
+  border-radius: 0.25rem;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.copy-button:hover {
+  background: #404040;
+  color: #fff;
+  border-color: #666;
+}
+
+.code-block-wrapper pre {
+  margin: 0;
+  padding: 1rem;
+  overflow-x: auto;
+  background: #1e1e1e;
+}
+
+.code-block-wrapper code {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #d4d4d4;
+}
+
+/* 链接样式 */
+.markdown-content a {
+  color: #1890ff;
+  text-decoration: none;
+  border-bottom: 1px dashed #1890ff;
+  transition: all 0.2s ease;
+}
+
+.markdown-content a:hover {
+  color: #40a9ff;
+  border-bottom-style: solid;
+}
+
+/* 表格样式 */
+.table-wrapper {
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.markdown-content th,
+.markdown-content td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #e8e8e8;
+  text-align: left;
+}
+
+.markdown-content th {
+  background: #fafafa;
+  font-weight: 600;
+}
+
+.markdown-content tr:hover {
+  background: rgba(24, 144, 255, 0.04);
+}
+
+/* 分割线 */
+.markdown-content hr {
+  margin: 1rem 0;
+  border: none;
+  border-top: 1px solid #e8e8e8;
+}
+
+/* 图片 */
+.markdown-content img {
+  max-width: 100%;
+  border-radius: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+/* 强调样式 */
+.markdown-content strong {
+  font-weight: 600;
+  color: #333;
+}
+
+.markdown-content em {
+  font-style: italic;
+}
+
+.markdown-content del {
+  text-decoration: line-through;
+  color: #999;
+}
+
+/* ==================== 移动端适配 ==================== */
+@media (max-width: 768px) {
+  .message-item {
+    max-width: 95%;
+  }
+
+  .message-list {
+    padding: 0.75rem;
+    gap: 0.75rem;
+  }
+
+  .message-avatar {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .message-content {
+    padding: 0.625rem 0.875rem;
+  }
+
+  .message-text {
+    font-size: 0.875rem;
+  }
+
+  .empty-icon {
+    font-size: 3rem;
+  }
+
+  .message-list-empty h2 {
+    font-size: 1.25rem;
+  }
+
+  .suggestions {
+    flex-direction: column;
+  }
+
+  .suggestion-item {
+    font-size: 0.8125rem;
+  }
+
+  /* Markdown 移动端 */
+  .markdown-content {
+    font-size: 0.875rem;
+  }
+
+  .code-block-wrapper pre {
+    padding: 0.75rem;
+  }
+
+  .code-block-wrapper code {
+    font-size: 0.8rem;
+  }
+
+  .markdown-content table {
+    font-size: 0.8rem;
+  }
+
+  .markdown-content th,
+  .markdown-content td {
+    padding: 0.375rem 0.5rem;
+  }
+}
