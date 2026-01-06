@@ -1,22 +1,28 @@
 /**
  * AI Chat 后端服务
- * 使用 Express + Ollama 本地大模型
+ * 使用 Express + Ollama 本地大模型 + MongoDB
  */
 import express from 'express';
 import cors from 'cors';
+import { connectDB } from './config/database.js';
+import { authMiddleware } from './middleware/auth.js';
+import { Session, Message } from './models/index.js';
+import authRoutes from './routes/auth.js';
+import sessionRoutes from './routes/sessions.js';
+import messageRoutes from './routes/messages.js';
 
 const app = express();
 const PORT = 8000;
 
 // Ollama 配置
 const OLLAMA_BASE_URL = 'http://localhost:11434';
-const DEFAULT_MODEL = 'deepseek-r1:1.5b'; // 默认使用轻量模型
+const DEFAULT_MODEL = 'deepseek-r1:1.5b';
 
 // 中间件
 app.use(cors());
 app.use(express.json());
 
-// 健康检查
+// 健康检查（无需认证）
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: '服务运行正常' });
 });
@@ -29,7 +35,7 @@ const formatSize = (bytes) => {
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
 };
 
-// 获取可用模型列表（包含详细信息）
+// 获取可用模型列表（无需认证）
 app.get('/api/models', async (req, res) => {
   try {
     const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`);
@@ -44,7 +50,6 @@ app.get('/api/models', async (req, res) => {
         family: model.details?.family || 'unknown',
         parameterSize: model.details?.parameter_size || 'unknown',
       }));
-      // 按大小排序，小的在前
       models.sort((a, b) => a.sizeBytes - b.sizeBytes);
       res.json({ models, defaultModel: DEFAULT_MODEL });
     } else {
@@ -55,10 +60,19 @@ app.get('/api/models', async (req, res) => {
   }
 });
 
-// 非流式聊天
-app.post('/api/chat', async (req, res) => {
+// 认证路由
+app.use('/api/auth', authRoutes);
+
+// 会话路由
+app.use('/api/sessions', sessionRoutes);
+
+// 消息路由
+app.use('/api/messages', messageRoutes);
+
+// 非流式聊天（需认证，可选保存到会话）
+app.post('/api/chat', authMiddleware, async (req, res) => {
   try {
-    const { messages, model = DEFAULT_MODEL } = req.body;
+    const { messages, model = DEFAULT_MODEL, sessionId } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: 'messages 参数必须是数组' });
@@ -79,10 +93,28 @@ app.post('/api/chat', async (req, res) => {
 
     if (response.ok) {
       const data = await response.json();
-      res.json({
-        content: data.message.content,
-        model,
-      });
+      const aiContent = data.message.content;
+
+      // 如果提供了 sessionId，保存消息到数据库
+      if (sessionId) {
+        const session = await Session.findOne({ _id: sessionId, userId: req.userId });
+        if (session) {
+          // 获取最后一条用户消息
+          const lastUserMessage = messages[messages.length - 1];
+          if (lastUserMessage && lastUserMessage.role === 'user') {
+            await Message.insertMany([
+              { sessionId, role: 'user', content: lastUserMessage.content },
+              { sessionId, role: 'assistant', content: aiContent },
+            ]);
+            
+            // 更新会话时间
+            session.updatedAt = new Date();
+            await session.save();
+          }
+        }
+      }
+
+      res.json({ content: aiContent, model });
     } else {
       res.status(500).json({ error: '模型响应失败' });
     }
@@ -91,9 +123,9 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// 流式聊天 (SSE)
-app.post('/api/chat/stream', async (req, res) => {
-  const { messages, model = DEFAULT_MODEL } = req.body;
+// 流式聊天 (SSE)（需认证，支持保存消息）
+app.post('/api/chat/stream', authMiddleware, async (req, res) => {
+  const { messages, model = DEFAULT_MODEL, sessionId } = req.body;
 
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: 'messages 参数必须是数组' });
@@ -105,6 +137,9 @@ app.post('/api/chat/stream', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.flushHeaders();
+
+  let fullContent = '';
+  const userId = req.userId;
 
   try {
     const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
@@ -134,6 +169,35 @@ app.post('/api/chat/stream', async (req, res) => {
         const { done, value } = await reader.read();
         
         if (done) {
+          // 流结束，保存消息到数据库
+          if (sessionId && fullContent) {
+            try {
+              const session = await Session.findOne({ _id: sessionId, userId });
+              if (session) {
+                const lastUserMessage = messages[messages.length - 1];
+                if (lastUserMessage && lastUserMessage.role === 'user') {
+                  // 检查是否是新会话的第一条消息
+                  const existingCount = await Message.countDocuments({ sessionId });
+                  
+                  await Message.insertMany([
+                    { sessionId, role: 'user', content: lastUserMessage.content },
+                    { sessionId, role: 'assistant', content: fullContent },
+                  ]);
+                  
+                  // 如果是第一条消息，更新会话标题
+                  if (existingCount === 0) {
+                    session.title = lastUserMessage.content.substring(0, 30) + 
+                      (lastUserMessage.content.length > 30 ? '...' : '');
+                  }
+                  session.updatedAt = new Date();
+                  await session.save();
+                }
+              }
+            } catch (dbError) {
+              console.error('保存消息到数据库失败:', dbError);
+            }
+          }
+          
           res.write(`event: done\ndata: ${JSON.stringify({ done: true })}\n\n`);
           res.end();
           break;
@@ -147,6 +211,7 @@ app.post('/api/chat/stream', async (req, res) => {
             const data = JSON.parse(line);
             
             if (data.message?.content) {
+              fullContent += data.message.content;
               res.write(`event: message\ndata: ${JSON.stringify({
                 content: data.message.content,
                 done: data.done || false,
@@ -154,6 +219,33 @@ app.post('/api/chat/stream', async (req, res) => {
             }
 
             if (data.done) {
+              // 保存消息到数据库
+              if (sessionId && fullContent) {
+                try {
+                  const session = await Session.findOne({ _id: sessionId, userId });
+                  if (session) {
+                    const lastUserMessage = messages[messages.length - 1];
+                    if (lastUserMessage && lastUserMessage.role === 'user') {
+                      const existingCount = await Message.countDocuments({ sessionId });
+                      
+                      await Message.insertMany([
+                        { sessionId, role: 'user', content: lastUserMessage.content },
+                        { sessionId, role: 'assistant', content: fullContent },
+                      ]);
+                      
+                      if (existingCount === 0) {
+                        session.title = lastUserMessage.content.substring(0, 30) + 
+                          (lastUserMessage.content.length > 30 ? '...' : '');
+                      }
+                      session.updatedAt = new Date();
+                      await session.save();
+                    }
+                  }
+                } catch (dbError) {
+                  console.error('保存消息到数据库失败:', dbError);
+                }
+              }
+              
               res.write(`event: done\ndata: ${JSON.stringify({ done: true })}\n\n`);
               res.end();
               return;
@@ -183,14 +275,27 @@ app.use((req, res, next) => {
 });
 
 // 启动服务
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`
+const startServer = async () => {
+  // 连接数据库
+  const dbConnected = await connectDB();
+  
+  if (!dbConnected) {
+    console.warn('⚠ 数据库连接失败，部分功能可能不可用');
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`
 ╔════════════════════════════════════════════════╗
 ║       AI Chat 后端服务已启动                    ║
 ╠════════════════════════════════════════════════╣
 ║  地址: http://localhost:${PORT}                  ║
 ║  健康检查: http://localhost:${PORT}/health       ║
 ║  默认模型: ${DEFAULT_MODEL}                      ║
+║  数据库: ${dbConnected ? 'MongoDB 已连接' : '未连接'}              ║
+║  默认账号: admin / 123123                       ║
 ╚════════════════════════════════════════════════╝
-  `);
-});
+    `);
+  });
+};
+
+startServer();

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Layout, Select, Typography, Alert, Badge, Tag, Tooltip, Avatar } from 'antd';
-import { Bubble, Sender, Welcome, Prompts } from '@ant-design/x';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Layout, Select, Typography, Alert, Badge, Tag, Tooltip, Avatar, message, Spin } from 'antd';
+import { Sender, Welcome, Prompts } from '@ant-design/x';
 import { 
   RobotOutlined, 
   ThunderboltOutlined, 
@@ -9,23 +9,36 @@ import {
   BulbOutlined,
   EditOutlined,
   CodeOutlined,
-  DeleteOutlined
+  DeleteOutlined,
+  MenuOutlined,
+  LoadingOutlined
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import { useChat } from '../../hooks/useChat';
-import { getModels, healthCheck } from '../../services/api';
-import type { ModelInfo, Message } from '../../services/api';
-import 'highlight.js/styles/github.css';
+import Sidebar from '../Sidebar';
+import { 
+  getModels, 
+  healthCheck, 
+  getSessions, 
+  createSession, 
+  getSessionDetail, 
+  deleteSession,
+  sendMessageStream,
+  type ModelInfo, 
+  type Message, 
+  type Session,
+  type User
+} from '../../services/api';
+import 'highlight.js/styles/github-dark.css';
 import './ChatContainer.css';
 
-const { Header, Content, Footer } = Layout;
+const { Header, Content, Footer, Sider } = Layout;
 const { Title, Text } = Typography;
 
 // 代码块组件
 const CodeBlock: React.FC<{ children: string; className?: string }> = ({ children, className }) => {
-  const [copied, setCopied] = React.useState(false);
+  const [copied, setCopied] = useState(false);
   const language = className?.replace('language-', '') || 'text';
 
   const handleCopy = async () => {
@@ -38,7 +51,12 @@ const CodeBlock: React.FC<{ children: string; className?: string }> = ({ childre
     <div className="code-block-wrapper">
       <div className="code-block-header">
         <span className="code-language">{language}</span>
-        <button className="copy-button" onClick={handleCopy} aria-label="复制代码" tabIndex={0}>
+        <button 
+          className="copy-button" 
+          onClick={handleCopy} 
+          aria-label="复制代码" 
+          tabIndex={0}
+        >
           {copied ? '✓ 已复制' : '复制'}
         </button>
       </div>
@@ -64,16 +82,118 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => (
         return <CodeBlock className={className}>{codeString}</CodeBlock>;
       },
       a({ children, href, ...props }) {
-        return <a href={href} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>;
+        return (
+          <a 
+            href={href} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            {...props}
+          >
+            {children}
+          </a>
+        );
       },
       table({ children, ...props }) {
-        return <div className="table-wrapper"><table {...props}>{children}</table></div>;
+        return (
+          <div className="table-wrapper">
+            <table {...props}>{children}</table>
+          </div>
+        );
       },
     }}
   >
     {content}
   </ReactMarkdown>
 );
+
+// 单条消息组件
+interface MessageItemProps {
+  message: Message;
+  isLoading?: boolean;
+  user?: User | null;
+}
+
+const MessageItem: React.FC<MessageItemProps> = ({ message, isLoading = false, user }) => {
+  const isUser = message.role === 'user';
+  
+  return (
+    <div className={`message-item ${isUser ? 'message-user' : 'message-assistant'}`}>
+      {/* AI 头像 - 左侧 */}
+      {!isUser && (
+        <div className="message-avatar message-avatar-left">
+          <Avatar 
+            size={40} 
+            icon={<RobotOutlined />} 
+            className="avatar-ai"
+          />
+        </div>
+      )}
+      
+      {/* 消息内容 */}
+      <div className={`message-content-wrapper ${isUser ? 'content-user' : 'content-assistant'}`}>
+        <div className="message-header">
+          <span className="message-role">
+            {isUser ? (user?.username || '你') : 'AI 助手'}
+          </span>
+        </div>
+        <div className={`message-bubble ${isUser ? 'bubble-user' : 'bubble-assistant'}`}>
+          {isLoading && !message.content ? (
+            <div className="message-loading">
+              <Spin indicator={<LoadingOutlined spin />} size="small" />
+              <span>思考中...</span>
+            </div>
+          ) : isUser ? (
+            <div className="message-text">{message.content}</div>
+          ) : (
+            <div className="message-markdown">
+              <MarkdownContent content={message.content} />
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* 用户头像 - 右侧 */}
+      {isUser && (
+        <div className="message-avatar message-avatar-right">
+          <Avatar 
+            size={40} 
+            icon={<UserOutlined />} 
+            className="avatar-user"
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// 消息列表组件
+interface MessageListProps {
+  messages: Message[];
+  isLoading: boolean;
+  user?: User | null;
+}
+
+const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, user }) => {
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  return (
+    <div className="message-list">
+      {messages.map((msg, index) => (
+        <MessageItem
+          key={msg._id || index}
+          message={msg}
+          isLoading={isLoading && msg.role === 'assistant' && index === messages.length - 1}
+          user={user}
+        />
+      ))}
+      <div ref={messagesEndRef} />
+    </div>
+  );
+};
 
 // 快捷提示配置
 const PROMPTS_ITEMS = [
@@ -94,26 +214,39 @@ const PROMPTS_ITEMS = [
   },
 ];
 
-const ChatContainer: React.FC = () => {
+interface ChatContainerProps {
+  onLogout: () => void;
+}
+
+const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [isServerOnline, setIsServerOnline] = useState<boolean | null>(null);
   const [inputValue, setInputValue] = useState('');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [currentModel, setCurrentModel] = useState('deepseek-r1:1.5b');
+  const [error, setError] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  
+  // 会话相关状态
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // 用户信息
+  const [user] = useState<User | null>(() => {
+    const savedUser = localStorage.getItem('user');
+    return savedUser ? JSON.parse(savedUser) : null;
+  });
 
-  const {
-    messages,
-    isLoading,
-    error,
-    currentModel,
-    sendMessage,
-    clearMessages,
-    setCurrentModel,
-  } = useChat();
-
-  // 自动滚动到底部
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  // 加载会话列表
+  const loadSessions = useCallback(async () => {
+    try {
+      const response = await getSessions();
+      setSessions(response.sessions);
+    } catch (err) {
+      console.error('加载会话列表失败:', err);
+    }
+  }, []);
 
   // 检查服务器状态和获取模型列表
   useEffect(() => {
@@ -130,22 +263,130 @@ const ChatContainer: React.FC = () => {
             setCurrentModel(response.defaultModel || modelNames[0]);
           }
         }
+        
+        await loadSessions();
       }
     };
 
     checkServer();
     const interval = setInterval(checkServer, 30000);
     return () => clearInterval(interval);
-  }, [currentModel, setCurrentModel]);
+  }, [currentModel, loadSessions]);
+
+  // 选择会话
+  const handleSelectSession = async (sessionId: string) => {
+    try {
+      const response = await getSessionDetail(sessionId);
+      setCurrentSessionId(sessionId);
+      setMessages(response.messages);
+      if (response.session.model) {
+        setCurrentModel(response.session.model);
+      }
+    } catch (err) {
+      console.error('加载会话详情失败:', err);
+      message.error('加载会话失败');
+    }
+  };
+
+  // 创建新会话
+  const handleCreateSession = async () => {
+    try {
+      const response = await createSession('新对话', currentModel);
+      setSessions(prev => [response.session, ...prev]);
+      setCurrentSessionId(response.session._id);
+      setMessages([]);
+    } catch (err) {
+      console.error('创建会话失败:', err);
+      message.error('创建会话失败');
+    }
+  };
+
+  // 删除会话
+  const handleDeleteSession = async (sessionId: string) => {
+    try {
+      await deleteSession(sessionId);
+      setSessions(prev => prev.filter(s => s._id !== sessionId));
+      
+      if (sessionId === currentSessionId) {
+        setCurrentSessionId(null);
+        setMessages([]);
+      }
+      
+      message.success('会话已删除');
+    } catch (err) {
+      console.error('删除会话失败:', err);
+      message.error('删除会话失败');
+    }
+  };
+
+  // 发送消息
+  const handleSend = async (content: string) => {
+    if (!content.trim() || isLoading || !isServerOnline) return;
+
+    let sessionId = currentSessionId;
+
+    if (!sessionId) {
+      try {
+        const response = await createSession('新对话', currentModel);
+        sessionId = response.session._id;
+        setCurrentSessionId(sessionId);
+        setSessions(prev => [response.session, ...prev]);
+      } catch (err) {
+        message.error('创建会话失败');
+        return;
+      }
+    }
+
+    const userMessage: Message = { role: 'user', content: content.trim() };
+    const assistantMessage: Message = { role: 'assistant', content: '' };
+    
+    setMessages(prev => [...prev, userMessage, assistantMessage]);
+    setInputValue('');
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const allMessages = [...messages, userMessage];
+      
+      await sendMessageStream(
+        { 
+          messages: allMessages, 
+          model: currentModel,
+          sessionId: sessionId
+        },
+        (chunk) => {
+          setMessages(prev => {
+            const updated = [...prev];
+            const lastMsg = updated[updated.length - 1];
+            if (lastMsg && lastMsg.role === 'assistant') {
+              lastMsg.content += chunk;
+            }
+            return updated;
+          });
+        },
+        () => {
+          setIsLoading(false);
+          loadSessions();
+        },
+        (errMsg) => {
+          setError(errMsg);
+          setIsLoading(false);
+          setMessages(prev => prev.filter(m => m.content !== ''));
+        }
+      );
+    } catch (err) {
+      setError('发送消息失败');
+      setIsLoading(false);
+    }
+  };
+
+  // 清空当前会话消息
+  const handleClearMessages = () => {
+    setMessages([]);
+  };
 
   const handleModelChange = (value: string) => {
     setCurrentModel(value);
-  };
-
-  const handleSend = (content: string) => {
-    if (!content.trim() || isLoading || !isServerOnline) return;
-    sendMessage(content.trim());
-    setInputValue('');
   };
 
   const handlePromptClick = (info: { data: { label?: string } }) => {
@@ -178,33 +419,37 @@ const ChatContainer: React.FC = () => {
     ),
   }));
 
-  // Bubble.List 的 roles 配置
-  const roles = {
-    user: {
-      placement: 'end' as const,
-      avatar: <Avatar icon={<UserOutlined />} style={{ background: '#1890ff' }} />,
-    },
-    assistant: {
-      placement: 'start' as const,
-      avatar: <Avatar icon={<RobotOutlined />} style={{ background: '#52c41a' }} />,
-      messageRender: (content: React.ReactNode) => (
-        <div className="markdown-content">{content}</div>
-      ),
-    },
-  };
-
-  // 将消息转换为 Bubble.List 格式
-  const bubbleItems = messages.map((msg: Message, index: number) => ({
-    key: index.toString(),
-    role: msg.role,
-    loading: isLoading && msg.role === 'assistant' && index === messages.length - 1 && msg.content === '',
-    content: msg.role === 'user' ? msg.content : <MarkdownContent content={msg.content} />,
-  }));
-
   return (
-    <Layout className="chat-container">
+    <Layout className="chat-layout">
+      <Sider
+        width={280}
+        collapsedWidth={0}
+        collapsed={sidebarCollapsed}
+        className="chat-sider"
+        trigger={null}
+      >
+        <Sidebar
+          sessions={sessions}
+          currentSessionId={currentSessionId}
+          user={user}
+          onSelectSession={handleSelectSession}
+          onCreateSession={handleCreateSession}
+          onDeleteSession={handleDeleteSession}
+          onLogout={onLogout}
+        />
+      </Sider>
+
+      <Layout className="chat-main">
         <Header className="chat-header">
           <div className="header-left">
+            <button
+              className="menu-toggle-btn"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              aria-label="切换侧边栏"
+              tabIndex={0}
+            >
+              <MenuOutlined />
+            </button>
             <RobotOutlined className="logo-icon" />
             <Title level={4} className="header-title">AI 智能助手</Title>
           </div>
@@ -262,6 +507,7 @@ const ChatContainer: React.FC = () => {
             type="error"
             showIcon
             closable
+            onClose={() => setError(null)}
             className="error-alert"
           />
         )}
@@ -284,12 +530,11 @@ const ChatContainer: React.FC = () => {
             </div>
           ) : (
             <div className="messages-container">
-              <Bubble.List
-                items={bubbleItems}
-                roles={roles}
-                className="bubble-list"
+              <MessageList 
+                messages={messages} 
+                isLoading={isLoading} 
+                user={user}
               />
-              <div ref={messagesEndRef} />
             </div>
           )}
         </Content>
@@ -311,7 +556,7 @@ const ChatContainer: React.FC = () => {
                     <Tooltip title="清空对话">
                       <button
                         className="clear-btn"
-                        onClick={clearMessages}
+                        onClick={handleClearMessages}
                         aria-label="清空对话"
                         tabIndex={0}
                       >
@@ -328,6 +573,7 @@ const ChatContainer: React.FC = () => {
             </div>
           </div>
         </Footer>
+      </Layout>
     </Layout>
   );
 };
