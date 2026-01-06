@@ -1,6 +1,6 @@
 /**
  * AI Chat 后端服务
- * 使用 Express + Ollama 本地大模型 + MongoDB
+ * 使用 Express + Ollama 本地大模型 + MongoDB + RAG
  */
 import express from 'express';
 import cors from 'cors';
@@ -10,6 +10,8 @@ import { Session, Message } from './models/index.js';
 import authRoutes from './routes/auth.js';
 import sessionRoutes from './routes/sessions.js';
 import messageRoutes from './routes/messages.js';
+import knowledgeRoutes from './routes/knowledge.js';
+import { semanticSearch, generateRAGPrompt } from './services/ragService.js';
 
 const app = express();
 const PORT = 8000;
@@ -69,13 +71,42 @@ app.use('/api/sessions', sessionRoutes);
 // 消息路由
 app.use('/api/messages', messageRoutes);
 
-// 非流式聊天（需认证，可选保存到会话）
+// 知识库路由
+app.use('/api/knowledge', knowledgeRoutes);
+
+// 非流式聊天（需认证，支持 RAG）
 app.post('/api/chat', authMiddleware, async (req, res) => {
   try {
-    const { messages, model = DEFAULT_MODEL, sessionId } = req.body;
+    const { messages, model = DEFAULT_MODEL, sessionId, useKnowledge = false, knowledgeIds = [] } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: 'messages 参数必须是数组' });
+    }
+
+    // 获取最后一条用户消息
+    const lastUserMessage = messages[messages.length - 1];
+    let finalMessages = [...messages];
+    let contexts = [];
+
+    // RAG 检索增强
+    if (useKnowledge && lastUserMessage?.role === 'user') {
+      try {
+        contexts = await semanticSearch(lastUserMessage.content, req.userId, {
+          topK: 5,
+          minScore: 0.5,
+          knowledgeIds: knowledgeIds.length > 0 ? knowledgeIds : null,
+        });
+
+        if (contexts.length > 0) {
+          const ragPrompt = generateRAGPrompt(lastUserMessage.content, contexts);
+          finalMessages = [
+            ...messages.slice(0, -1),
+            { role: 'user', content: ragPrompt },
+          ];
+        }
+      } catch (ragError) {
+        console.error('RAG 检索失败:', ragError);
+      }
     }
 
     const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
@@ -83,7 +114,7 @@ app.post('/api/chat', authMiddleware, async (req, res) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
-        messages: messages.map((msg) => ({
+        messages: finalMessages.map((msg) => ({
           role: msg.role,
           content: msg.content,
         })),
@@ -99,22 +130,27 @@ app.post('/api/chat', authMiddleware, async (req, res) => {
       if (sessionId) {
         const session = await Session.findOne({ _id: sessionId, userId: req.userId });
         if (session) {
-          // 获取最后一条用户消息
-          const lastUserMessage = messages[messages.length - 1];
           if (lastUserMessage && lastUserMessage.role === 'user') {
             await Message.insertMany([
               { sessionId, role: 'user', content: lastUserMessage.content },
               { sessionId, role: 'assistant', content: aiContent },
             ]);
             
-            // 更新会话时间
             session.updatedAt = new Date();
             await session.save();
           }
         }
       }
 
-      res.json({ content: aiContent, model });
+      res.json({ 
+        content: aiContent, 
+        model,
+        contexts: contexts.map(c => ({
+          content: c.content.substring(0, 200) + '...',
+          score: c.score,
+          knowledgeName: c.knowledgeName,
+        })),
+      });
     } else {
       res.status(500).json({ error: '模型响应失败' });
     }
@@ -123,9 +159,9 @@ app.post('/api/chat', authMiddleware, async (req, res) => {
   }
 });
 
-// 流式聊天 (SSE)（需认证，支持保存消息）
+// 流式聊天 (SSE)（需认证，支持 RAG）
 app.post('/api/chat/stream', authMiddleware, async (req, res) => {
-  const { messages, model = DEFAULT_MODEL, sessionId } = req.body;
+  const { messages, model = DEFAULT_MODEL, sessionId, useKnowledge = false, knowledgeIds = [] } = req.body;
 
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: 'messages 参数必须是数组' });
@@ -140,6 +176,39 @@ app.post('/api/chat/stream', authMiddleware, async (req, res) => {
 
   let fullContent = '';
   const userId = req.userId;
+  const lastUserMessage = messages[messages.length - 1];
+  let finalMessages = [...messages];
+  let contexts = [];
+
+  // RAG 检索增强
+  if (useKnowledge && lastUserMessage?.role === 'user') {
+    try {
+      contexts = await semanticSearch(lastUserMessage.content, userId, {
+        topK: 5,
+        minScore: 0.5,
+        knowledgeIds: knowledgeIds.length > 0 ? knowledgeIds : null,
+      });
+
+      if (contexts.length > 0) {
+        const ragPrompt = generateRAGPrompt(lastUserMessage.content, contexts);
+        finalMessages = [
+          ...messages.slice(0, -1),
+          { role: 'user', content: ragPrompt },
+        ];
+
+        // 发送检索到的上下文信息
+        res.write(`event: contexts\ndata: ${JSON.stringify({
+          contexts: contexts.map(c => ({
+            content: c.content.substring(0, 200) + '...',
+            score: c.score.toFixed(4),
+            knowledgeName: c.knowledgeName,
+          })),
+        })}\n\n`);
+      }
+    } catch (ragError) {
+      console.error('RAG 检索失败:', ragError);
+    }
+  }
 
   try {
     const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
@@ -147,7 +216,7 @@ app.post('/api/chat/stream', authMiddleware, async (req, res) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
-        messages: messages.map((msg) => ({
+        messages: finalMessages.map((msg) => ({
           role: msg.role,
           content: msg.content,
         })),
@@ -174,9 +243,7 @@ app.post('/api/chat/stream', authMiddleware, async (req, res) => {
             try {
               const session = await Session.findOne({ _id: sessionId, userId });
               if (session) {
-                const lastUserMessage = messages[messages.length - 1];
                 if (lastUserMessage && lastUserMessage.role === 'user') {
-                  // 检查是否是新会话的第一条消息
                   const existingCount = await Message.countDocuments({ sessionId });
                   
                   await Message.insertMany([
@@ -184,7 +251,6 @@ app.post('/api/chat/stream', authMiddleware, async (req, res) => {
                     { sessionId, role: 'assistant', content: fullContent },
                   ]);
                   
-                  // 如果是第一条消息，更新会话标题
                   if (existingCount === 0) {
                     session.title = lastUserMessage.content.substring(0, 30) + 
                       (lastUserMessage.content.length > 30 ? '...' : '');
@@ -224,7 +290,6 @@ app.post('/api/chat/stream', authMiddleware, async (req, res) => {
                 try {
                   const session = await Session.findOne({ _id: sessionId, userId });
                   if (session) {
-                    const lastUserMessage = messages[messages.length - 1];
                     if (lastUserMessage && lastUserMessage.role === 'user') {
                       const existingCount = await Message.countDocuments({ sessionId });
                       
@@ -293,6 +358,7 @@ const startServer = async () => {
 ║  默认模型: ${DEFAULT_MODEL}                      ║
 ║  数据库: ${dbConnected ? 'MongoDB 已连接' : '未连接'}              ║
 ║  默认账号: admin / 123123                       ║
+║  知识库: RAG 功能已启用                         ║
 ╚════════════════════════════════════════════════╝
     `);
   });

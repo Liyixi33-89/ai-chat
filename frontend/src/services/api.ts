@@ -67,17 +67,51 @@ export interface User {
   createdAt: string;
 }
 
+// 知识库类型
+export interface Knowledge {
+  id: string;
+  name: string;
+  originalName: string;
+  fileType: string;
+  fileSize: number;
+  chunkCount: number;
+  status: 'processing' | 'ready' | 'error';
+  errorMessage?: string;
+  contentPreview?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// 知识库搜索结果
+export interface KnowledgeSearchResult {
+  content: string;
+  score: string;
+  knowledgeId: string;
+  knowledgeName: string;
+  chunkIndex: number;
+}
+
+// RAG 上下文
+export interface RAGContext {
+  content: string;
+  score: string;
+  knowledgeName: string;
+}
+
 // 聊天请求类型
 export interface ChatRequest {
   messages: Message[];
   model?: string;
   sessionId?: string;
+  useKnowledge?: boolean;
+  knowledgeIds?: string[];
 }
 
 // 聊天响应类型
 export interface ChatResponse {
   content: string;
   model: string;
+  contexts?: RAGContext[];
 }
 
 // 模型详细信息
@@ -224,6 +258,76 @@ export const getModels = async (): Promise<ModelsResponse> => {
   }
 };
 
+// ============ 知识库 API ============
+
+/**
+ * 获取知识库列表
+ */
+export const getKnowledgeList = async (): Promise<Knowledge[]> => {
+  const response = await apiClient.get<{ success: boolean; data: Knowledge[] }>('/api/knowledge');
+  return response.data.data;
+};
+
+/**
+ * 获取知识库详情
+ */
+export const getKnowledgeDetail = async (id: string): Promise<Knowledge> => {
+  const response = await apiClient.get<{ success: boolean; data: Knowledge }>(`/api/knowledge/${id}`);
+  return response.data.data;
+};
+
+/**
+ * 上传文档到知识库
+ */
+export const uploadKnowledge = async (file: File, name?: string): Promise<Knowledge> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (name) {
+    formData.append('name', name);
+  }
+
+  const response = await apiClient.post<{ success: boolean; data: Knowledge; message: string }>(
+    '/api/knowledge/upload',
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 300000, // 5分钟超时
+    }
+  );
+  return response.data.data;
+};
+
+/**
+ * 删除知识库
+ */
+export const deleteKnowledge = async (id: string): Promise<void> => {
+  await apiClient.delete(`/api/knowledge/${id}`);
+};
+
+/**
+ * 搜索知识库
+ */
+export const searchKnowledge = async (
+  query: string,
+  knowledgeIds?: string[],
+  topK?: number
+): Promise<KnowledgeSearchResult[]> => {
+  const response = await apiClient.post<{ success: boolean; data: KnowledgeSearchResult[] }>(
+    '/api/knowledge/search',
+    { query, knowledgeIds, topK }
+  );
+  return response.data.data;
+};
+
+/**
+ * 重新处理知识库文档
+ */
+export const reprocessKnowledge = async (id: string): Promise<void> => {
+  await apiClient.post(`/api/knowledge/${id}/reprocess`);
+};
+
 // ============ 聊天 API ============
 
 /**
@@ -235,13 +339,14 @@ export const sendMessage = async (request: ChatRequest): Promise<ChatResponse> =
 };
 
 /**
- * 发送聊天消息（流式）
+ * 发送聊天消息（流式，支持 RAG）
  */
 export const sendMessageStream = async (
   request: ChatRequest,
   onMessage: (content: string) => void,
   onDone: () => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  onContexts?: (contexts: RAGContext[]) => void
 ): Promise<void> => {
   try {
     const token = localStorage.getItem('token');
@@ -286,6 +391,21 @@ export const sendMessageStream = async (
       buffer = lines.pop() || '';
 
       for (const line of lines) {
+        // 处理 RAG 上下文事件
+        if (line.startsWith('event: contexts')) {
+          continue;
+        }
+        if (line.startsWith('data: ') && onContexts) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.contexts) {
+              onContexts(data.contexts);
+              continue;
+            }
+          } catch {
+            // 忽略解析错误
+          }
+        }
         if (line.startsWith('data: ')) {
           try {
             const data = JSON.parse(line.slice(6));

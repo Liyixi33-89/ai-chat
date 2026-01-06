@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Layout, Select, Typography, Alert, Badge, Tag, Tooltip, Avatar, message, Spin } from 'antd';
+import { Layout, Select, Typography, Alert, Badge, Tag, Tooltip, Avatar, message, Spin, Switch } from 'antd';
 import { Sender, Welcome, Prompts } from '@ant-design/x';
 import { 
   RobotOutlined, 
@@ -11,12 +11,15 @@ import {
   CodeOutlined,
   DeleteOutlined,
   MenuOutlined,
-  LoadingOutlined
+  LoadingOutlined,
+  BookOutlined,
+  FileTextOutlined
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import Sidebar from '../Sidebar';
+import KnowledgeManager from '../Knowledge';
 import { 
   getModels, 
   healthCheck, 
@@ -28,7 +31,8 @@ import {
   type ModelInfo, 
   type Message, 
   type Session,
-  type User
+  type User,
+  type RAGContext
 } from '../../services/api';
 import 'highlight.js/styles/github-dark.css';
 import './ChatContainer.css';
@@ -111,9 +115,10 @@ interface MessageItemProps {
   message: Message;
   isLoading?: boolean;
   user?: User | null;
+  contexts?: RAGContext[];
 }
 
-const MessageItem: React.FC<MessageItemProps> = ({ message, isLoading = false, user }) => {
+const MessageItem: React.FC<MessageItemProps> = ({ message, isLoading = false, user, contexts }) => {
   const isUser = message.role === 'user';
   
   return (
@@ -136,6 +141,24 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isLoading = false, u
             {isUser ? (user?.username || '你') : 'AI 助手'}
           </span>
         </div>
+        
+        {/* RAG 上下文引用 */}
+        {!isUser && contexts && contexts.length > 0 && (
+          <div className="rag-contexts">
+            <div className="rag-contexts-title">
+              <BookOutlined /> 引用了 {contexts.length} 条知识库内容
+            </div>
+            <div className="rag-contexts-list">
+              {contexts.map((ctx, idx) => (
+                <div key={idx} className="rag-context-item">
+                  <span className="context-source">{ctx.knowledgeName}</span>
+                  <span className="context-score">相似度: {ctx.score}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
         <div className={`message-bubble ${isUser ? 'bubble-user' : 'bubble-assistant'}`}>
           {isLoading && !message.content ? (
             <div className="message-loading">
@@ -171,9 +194,10 @@ interface MessageListProps {
   messages: Message[];
   isLoading: boolean;
   user?: User | null;
+  ragContexts?: RAGContext[];
 }
 
-const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, user }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, user, ragContexts }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -182,14 +206,22 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, user }) 
 
   return (
     <div className="message-list">
-      {messages.map((msg, index) => (
-        <MessageItem
-          key={msg._id || index}
-          message={msg}
-          isLoading={isLoading && msg.role === 'assistant' && index === messages.length - 1}
-          user={user}
-        />
-      ))}
+      {messages.map((msg, index) => {
+        const showContexts = msg.role === 'assistant' && 
+          index === messages.length - 1 && 
+          ragContexts && 
+          ragContexts.length > 0;
+        
+        return (
+          <MessageItem
+            key={msg._id || index}
+            message={msg}
+            isLoading={isLoading && msg.role === 'assistant' && index === messages.length - 1}
+            user={user}
+            contexts={showContexts ? ragContexts : undefined}
+          />
+        );
+      })}
       <div ref={messagesEndRef} />
     </div>
   );
@@ -231,6 +263,12 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // 知识库相关状态
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [selectedKnowledgeIds, setSelectedKnowledgeIds] = useState<string[]>([]);
+  const [useKnowledge, setUseKnowledge] = useState(false);
+  const [ragContexts, setRagContexts] = useState<RAGContext[]>([]);
   
   // 用户信息
   const [user] = useState<User | null>(() => {
@@ -279,6 +317,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
       const response = await getSessionDetail(sessionId);
       setCurrentSessionId(sessionId);
       setMessages(response.messages);
+      setRagContexts([]);
       if (response.session.model) {
         setCurrentModel(response.session.model);
       }
@@ -295,6 +334,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
       setSessions(prev => [response.session, ...prev]);
       setCurrentSessionId(response.session._id);
       setMessages([]);
+      setRagContexts([]);
     } catch (err) {
       console.error('创建会话失败:', err);
       message.error('创建会话失败');
@@ -310,6 +350,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
       if (sessionId === currentSessionId) {
         setCurrentSessionId(null);
         setMessages([]);
+        setRagContexts([]);
       }
       
       message.success('会话已删除');
@@ -344,6 +385,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
     setInputValue('');
     setIsLoading(true);
     setError(null);
+    setRagContexts([]);
 
     try {
       const allMessages = [...messages, userMessage];
@@ -352,7 +394,9 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
         { 
           messages: allMessages, 
           model: currentModel,
-          sessionId: sessionId
+          sessionId: sessionId,
+          useKnowledge: useKnowledge && selectedKnowledgeIds.length > 0,
+          knowledgeIds: selectedKnowledgeIds
         },
         (chunk) => {
           setMessages(prev => {
@@ -372,6 +416,9 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
           setError(errMsg);
           setIsLoading(false);
           setMessages(prev => prev.filter(m => m.content !== ''));
+        },
+        (contexts) => {
+          setRagContexts(contexts);
         }
       );
     } catch (err) {
@@ -383,6 +430,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
   // 清空当前会话消息
   const handleClearMessages = () => {
     setMessages([]);
+    setRagContexts([]);
   };
 
   const handleModelChange = (value: string) => {
@@ -475,9 +523,36 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
                 </Tooltip>
               )}
             </div>
+            
+            {/* 知识库开关 */}
+            <div className="knowledge-toggle">
+              <Tooltip title={selectedKnowledgeIds.length > 0 ? `已选 ${selectedKnowledgeIds.length} 个知识库` : '请先选择知识库'}>
+                <Switch
+                  checked={useKnowledge}
+                  onChange={setUseKnowledge}
+                  disabled={selectedKnowledgeIds.length === 0}
+                  checkedChildren={<BookOutlined />}
+                  unCheckedChildren={<BookOutlined />}
+                  size="small"
+                />
+              </Tooltip>
+              <span className="knowledge-label" onClick={() => setKnowledgeOpen(true)}>
+                知识库 {selectedKnowledgeIds.length > 0 && <Badge count={selectedKnowledgeIds.length} size="small" />}
+              </span>
+            </div>
           </div>
 
           <div className="header-right">
+            <Tooltip title="管理知识库">
+              <button
+                className="knowledge-btn"
+                onClick={() => setKnowledgeOpen(true)}
+                aria-label="知识库"
+                tabIndex={0}
+              >
+                <FileTextOutlined />
+              </button>
+            </Tooltip>
             <Badge
               status={isServerOnline === null ? 'processing' : isServerOnline ? 'success' : 'error'}
               text={
@@ -527,6 +602,13 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
                 className="prompts-component"
                 wrap
               />
+              
+              {/* 知识库提示 */}
+              {selectedKnowledgeIds.length > 0 && useKnowledge && (
+                <div className="knowledge-hint">
+                  <BookOutlined /> 已启用 {selectedKnowledgeIds.length} 个知识库，AI 将基于知识库内容回答问题
+                </div>
+              )}
             </div>
           ) : (
             <div className="messages-container">
@@ -534,6 +616,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
                 messages={messages} 
                 isLoading={isLoading} 
                 user={user}
+                ragContexts={ragContexts}
               />
             </div>
           )}
@@ -547,7 +630,9 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
               onSubmit={handleSend}
               loading={isLoading}
               disabled={!isServerOnline}
-              placeholder="输入消息，按 Enter 发送..."
+              placeholder={useKnowledge && selectedKnowledgeIds.length > 0 
+                ? "输入问题，AI 将基于知识库回答..."
+                : "输入消息，按 Enter 发送..."}
               className="chat-sender"
               actions={(_, info) => {
                 const { SendButton, LoadingButton } = info.components;
@@ -569,11 +654,26 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
               }}
             />
             <div className="chat-input-hint">
-              基于本地 Ollama 大模型 · 当前模型: {currentModel} · 数据完全私密
+              基于本地 Ollama 大模型 · 当前模型: {currentModel} 
+              {useKnowledge && selectedKnowledgeIds.length > 0 && ' · RAG 模式已启用'}
+              {' · 数据完全私密'}
             </div>
           </div>
         </Footer>
       </Layout>
+      
+      {/* 知识库管理抽屉 */}
+      <KnowledgeManager
+        open={knowledgeOpen}
+        onClose={() => setKnowledgeOpen(false)}
+        selectedIds={selectedKnowledgeIds}
+        onSelectChange={(ids) => {
+          setSelectedKnowledgeIds(ids);
+          if (ids.length > 0) {
+            setUseKnowledge(true);
+          }
+        }}
+      />
     </Layout>
   );
 };

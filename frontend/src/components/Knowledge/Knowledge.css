@@ -1,0 +1,186 @@
+/* 知识库管理样式 */
+
+.knowledge-manager {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 16px;
+}
+
+/* 搜索区域 */
+.knowledge-search {
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+/* 搜索结果 */
+.search-results {
+  max-height: 300px;
+  overflow-y: auto;
+  background: #fafafa;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.search-results-title {
+  font-weight: 500;
+  margin-bottom: 12px;
+  color: #1890ff;
+}
+
+.search-result-item {
+  background: #fff;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.search-result-item:last-child {
+  margin-bottom: 0;
+}
+
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.result-source {
+  font-weight: 500;
+  color: #333;
+  font-size: 13px;
+}
+
+.result-content {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 列表头部 */
+.knowledge-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 500;
+  color: #333;
+}
+
+/* 知识库列表 */
+.knowledge-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.knowledge-item {
+  cursor: pointer;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  padding: 12px !important;
+  background: #fafafa;
+  border: 2px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.knowledge-item:hover {
+  background: #f0f7ff;
+  border-color: #bae7ff;
+}
+
+.knowledge-item.selected {
+  background: #e6f7ff;
+  border-color: #1890ff;
+}
+
+.item-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+}
+
+.item-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.item-name {
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  word-break: break-all;
+}
+
+.item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #999;
+  flex-wrap: wrap;
+}
+
+.item-error {
+  font-size: 12px;
+  color: #ff4d4f;
+  margin-top: 4px;
+}
+
+.item-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* 提示信息 */
+.knowledge-tips {
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+  font-size: 12px;
+  color: #999;
+}
+
+.knowledge-tips p {
+  margin: 4px 0;
+}
+
+/* 空状态 */
+.knowledge-list .ant-empty {
+  padding: 40px 0;
+}
+
+/* 滚动条样式 */
+.knowledge-list::-webkit-scrollbar,
+.search-results::-webkit-scrollbar {
+  width: 6px;
+}
+
+.knowledge-list::-webkit-scrollbar-track,
+.search-results::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.knowledge-list::-webkit-scrollbar-thumb,
+.search-results::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 3px;
+}
+
+.knowledge-list::-webkit-scrollbar-thumb:hover,
+.search-results::-webkit-scrollbar-thumb:hover {
+  background: #bfbfbf;
+}

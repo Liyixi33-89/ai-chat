@@ -626,3 +626,109 @@
     border-color: #3d3d3d;
   }
 }
+
+/* 知识库开关样式 */
+.knowledge-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 16px;
+  padding: 6px 12px;
+  background: #f0f7ff;
+  border-radius: 8px;
+  border: 1px solid #bae7ff;
+}
+
+.knowledge-label {
+  font-size: 13px;
+  color: #1890ff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.knowledge-label:hover {
+  text-decoration: underline;
+}
+
+.knowledge-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: #f5f5f5;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 18px;
+  color: #666;
+  transition: all 0.2s;
+  margin-right: 12px;
+}
+
+.knowledge-btn:hover {
+  background: #e6f7ff;
+  color: #1890ff;
+}
+
+/* RAG 上下文样式 */
+.rag-contexts {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #f0f7ff 0%, #e6f7ff 100%);
+  border-radius: 8px;
+  border-left: 3px solid #1890ff;
+}
+
+.rag-contexts-title {
+  font-size: 12px;
+  color: #1890ff;
+  font-weight: 500;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rag-contexts-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rag-context-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: #fff;
+  border-radius: 4px;
+  font-size: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.context-source {
+  color: #333;
+  font-weight: 500;
+}
+
+.context-score {
+  color: #52c41a;
+  font-size: 11px;
+}
+
+/* 知识库提示 */
+.knowledge-hint {
+  margin-top: 16px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #e6f7ff 0%, #f0f7ff 100%);
+  border-radius: 8px;
+  color: #1890ff;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #91d5ff;
+}
