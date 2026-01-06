@@ -23,6 +23,7 @@ import {
   FileTextOutlined,
   FilePdfOutlined,
   FileMarkdownOutlined,
+  FileExcelOutlined,
   ReloadOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -53,6 +54,9 @@ const fileIconMap: Record<string, React.ReactNode> = {
   pdf: <FilePdfOutlined style={{ color: '#f5222d' }} />,
   txt: <FileTextOutlined style={{ color: '#1890ff' }} />,
   md: <FileMarkdownOutlined style={{ color: '#722ed1' }} />,
+  xlsx: <FileExcelOutlined style={{ color: '#52c41a' }} />,
+  xls: <FileExcelOutlined style={{ color: '#52c41a' }} />,
+  csv: <FileExcelOutlined style={{ color: '#13c2c2' }} />,
 };
 
 // 状态标签配置
@@ -120,7 +124,7 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({
   // 上传配置
   const uploadProps: UploadProps = {
     name: 'file',
-    accept: '.pdf,.txt,.md',
+    accept: '.pdf,.txt,.md,.xlsx,.xls,.csv',
     showUploadList: false,
     beforeUpload: async (file) => {
       // 检查文件大小
@@ -330,7 +334,7 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({
 
         {/* 提示信息 */}
         <div className="knowledge-tips">
-          <p>💡 支持 PDF、TXT、MD 格式，单文件最大 10MB</p>
+          <p>💡 支持 PDF、TXT、MD、Excel(xlsx/xls)、CSV 格式，单文件最大 10MB</p>
           <p>📌 点击文档可选择用于对话的知识库</p>
         </div>
       </div>

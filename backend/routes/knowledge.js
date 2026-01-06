@@ -7,6 +7,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import * as XLSX from 'xlsx';
 import { authMiddleware } from '../middleware/auth.js';
 import { Knowledge, VectorChunk } from '../models/index.js';
 import { processDocument, semanticSearch } from '../services/ragService.js';
@@ -36,6 +37,102 @@ const decodeFileName = (filename) => {
   }
   
   return filename;
+};
+
+/**
+ * 解析表格文件（Excel/CSV）
+ * 将表格转换为结构化文本，便于向量化检索
+ */
+const parseSpreadsheet = (buffer, fileType) => {
+  // 读取工作簿
+  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  const allSheetsText = [];
+
+  // 遍历所有工作表
+  workbook.SheetNames.forEach((sheetName, sheetIndex) => {
+    const worksheet = workbook.Sheets[sheetName];
+    
+    // 获取工作表范围
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+    
+    // 将工作表转换为 JSON 数组（包含表头）
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    
+    if (jsonData.length === 0) return;
+
+    // 获取表头（第一行）
+    const headers = jsonData[0].map((h, i) => h || `列${i + 1}`);
+    
+    // 构建结构化文本
+    const sheetText = [];
+    sheetText.push(`【工作表: ${sheetName}】`);
+    sheetText.push(`表头: ${headers.join(' | ')}`);
+    sheetText.push('');
+
+    // 处理数据行（跳过表头）
+    for (let i = 1; i < jsonData.length; i++) {
+      const row = jsonData[i];
+      // 跳过空行
+      if (row.every(cell => cell === '' || cell === null || cell === undefined)) continue;
+      
+      // 将每行转换为「字段名: 值」的格式，便于语义理解
+      const rowParts = [];
+      headers.forEach((header, j) => {
+        const value = row[j];
+        if (value !== '' && value !== null && value !== undefined) {
+          rowParts.push(`${header}: ${value}`);
+        }
+      });
+      
+      if (rowParts.length > 0) {
+        sheetText.push(`第${i}行: ${rowParts.join(', ')}`);
+      }
+    }
+
+    if (sheetText.length > 2) {
+      allSheetsText.push(sheetText.join('\n'));
+    }
+  });
+
+  return allSheetsText.join('\n\n');
+};
+
+/**
+ * 解析表格文件为简洁的行式文本（适合大表格）
+ * 每行作为独立的检索单元
+ */
+const parseSpreadsheetByRows = (buffer, fileType) => {
+  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  const allRows = [];
+
+  workbook.SheetNames.forEach((sheetName) => {
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    
+    if (jsonData.length < 2) return;
+
+    const headers = jsonData[0].map((h, i) => h || `列${i + 1}`);
+    
+    // 每行数据作为独立文本块
+    for (let i = 1; i < jsonData.length; i++) {
+      const row = jsonData[i];
+      if (row.every(cell => cell === '' || cell === null || cell === undefined)) continue;
+      
+      const rowText = headers
+        .map((header, j) => {
+          const value = row[j];
+          return value !== '' && value !== null && value !== undefined ? `${header}:${value}` : null;
+        })
+        .filter(Boolean)
+        .join('; ');
+      
+      if (rowText) {
+        allRows.push(`[${sheetName}] ${rowText}`);
+      }
+    }
+  });
+
+  return allRows.join('\n');
 };
 
 // 使用 pdfjs-dist 解析 PDF（更稳定）
@@ -87,12 +184,12 @@ const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['.pdf', '.txt', '.md'];
+    const allowedTypes = ['.pdf', '.txt', '.md', '.xlsx', '.xls', '.csv'];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowedTypes.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('只支持 PDF、TXT、MD 格式的文件'));
+      cb(new Error('只支持 PDF、TXT、MD、Excel(xlsx/xls)、CSV 格式的文件'));
     }
   },
 });
@@ -112,6 +209,14 @@ const parseFileContent = async (filePath, fileType) => {
     case 'txt':
     case 'md':
       return buffer.toString('utf-8');
+
+    case 'xlsx':
+    case 'xls':
+    case 'csv':
+      // 解析表格文件，转换为结构化文本
+      const spreadsheetText = parseSpreadsheet(buffer, fileType);
+      console.log(`表格解析完成，文本长度: ${spreadsheetText.length}`);
+      return spreadsheetText;
 
     default:
       throw new Error(`不支持的文件类型: ${fileType}`);

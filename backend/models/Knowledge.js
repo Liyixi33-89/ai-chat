@@ -22,7 +22,7 @@ const knowledgeSchema = new mongoose.Schema({
   fileType: {
     type: String,
     required: true,
-    enum: ['pdf', 'txt', 'md', 'docx'],
+    enum: ['pdf', 'txt', 'md', 'docx', 'xlsx', 'xls', 'csv'],
   },
   fileSize: {
     type: Number,
