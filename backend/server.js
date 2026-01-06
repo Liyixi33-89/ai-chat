@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.js';
 import sessionRoutes from './routes/sessions.js';
 import messageRoutes from './routes/messages.js';
 import knowledgeRoutes from './routes/knowledge.js';
+import adminRoutes from './routes/admin.js';
 import { semanticSearch, generateRAGPrompt } from './services/ragService.js';
 
 const app = express();
@@ -73,6 +74,9 @@ app.use('/api/messages', messageRoutes);
 
 // 知识库路由
 app.use('/api/knowledge', knowledgeRoutes);
+
+// 管理员路由
+app.use('/api', adminRoutes);
 
 // 非流式聊天（需认证，支持 RAG）
 app.post('/api/chat', authMiddleware, async (req, res) => {

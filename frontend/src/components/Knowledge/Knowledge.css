@@ -158,6 +158,21 @@
   margin: 4px 0;
 }
 
+/* 已选提示 */
+.selected-hint {
+  padding: 8px 0;
+}
+
+/* 禁用状态 */
+.knowledge-item.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.knowledge-item.clickable {
+  cursor: pointer;
+}
+
 /* 空状态 */
 .knowledge-list .ant-empty {
   padding: 40px 0;

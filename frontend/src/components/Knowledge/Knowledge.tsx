@@ -1,25 +1,18 @@
 /**
- * 知识库管理组件
- * 支持文档上传、查看、删除
+ * 知识库查询组件
+ * 支持文档查看、选择、搜索（上传/编辑/删除功能已移至后台管理系统）
  */
 import { useState, useEffect, useCallback } from 'react';
 import {
   Drawer,
-  Upload,
   Button,
   List,
   Tag,
-  Popconfirm,
-  message,
-  Progress,
   Empty,
-  Tooltip,
   Input,
   Space,
 } from 'antd';
 import {
-  UploadOutlined,
-  DeleteOutlined,
   FileTextOutlined,
   FilePdfOutlined,
   FileMarkdownOutlined,
@@ -30,12 +23,8 @@ import {
   LoadingOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
-import type { UploadProps } from 'antd';
 import {
   getKnowledgeList,
-  uploadKnowledge,
-  deleteKnowledge,
-  reprocessKnowledge,
   searchKnowledge,
   type Knowledge,
   type KnowledgeSearchResult,
@@ -81,7 +70,6 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({
 }) => {
   const [knowledgeList, setKnowledgeList] = useState<Knowledge[]>([]);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -94,7 +82,6 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({
       setKnowledgeList(list);
     } catch (error) {
       console.error('加载知识库失败:', error);
-      message.error('加载知识库失败');
     } finally {
       setLoading(false);
     }
@@ -121,60 +108,6 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({
     return () => clearInterval(timer);
   }, [open, knowledgeList, loadKnowledgeList]);
 
-  // 上传配置
-  const uploadProps: UploadProps = {
-    name: 'file',
-    accept: '.pdf,.txt,.md,.xlsx,.xls,.csv',
-    showUploadList: false,
-    beforeUpload: async (file) => {
-      // 检查文件大小
-      if (file.size > 10 * 1024 * 1024) {
-        message.error('文件大小不能超过 10MB');
-        return false;
-      }
-
-      setUploading(true);
-      try {
-        await uploadKnowledge(file);
-        message.success('文档上传成功，正在处理中...');
-        loadKnowledgeList();
-      } catch (error) {
-        console.error('上传失败:', error);
-        message.error('上传失败');
-      } finally {
-        setUploading(false);
-      }
-
-      return false;
-    },
-  };
-
-  // 删除知识库
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteKnowledge(id);
-      message.success('删除成功');
-      // 从选中列表中移除
-      onSelectChange(selectedIds.filter((sid) => sid !== id));
-      loadKnowledgeList();
-    } catch (error) {
-      console.error('删除失败:', error);
-      message.error('删除失败');
-    }
-  };
-
-  // 重新处理
-  const handleReprocess = async (id: string) => {
-    try {
-      await reprocessKnowledge(id);
-      message.success('重新处理中...');
-      loadKnowledgeList();
-    } catch (error) {
-      console.error('重新处理失败:', error);
-      message.error('重新处理失败');
-    }
-  };
-
   // 选择/取消选择
   const handleToggleSelect = (id: string) => {
     if (selectedIds.includes(id)) {
@@ -197,25 +130,47 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({
       setSearchResults(results);
     } catch (error) {
       console.error('搜索失败:', error);
-      message.error('搜索失败');
     } finally {
       setSearching(false);
     }
   };
 
+  // 全选/取消全选
+  const handleSelectAll = () => {
+    const readyIds = knowledgeList.filter((k) => k.status === 'ready').map((k) => k.id);
+    if (selectedIds.length === readyIds.length) {
+      onSelectChange([]);
+    } else {
+      onSelectChange(readyIds);
+    }
+  };
+
+  const readyCount = knowledgeList.filter((k) => k.status === 'ready').length;
+  const isAllSelected = readyCount > 0 && selectedIds.length === readyCount;
+
   return (
     <Drawer
-      title="📚 知识库管理"
+      title="📚 知识库"
       placement="right"
       width={480}
       open={open}
       onClose={onClose}
       extra={
-        <Upload {...uploadProps}>
-          <Button type="primary" icon={<UploadOutlined />} loading={uploading}>
-            上传文档
+        <Space>
+          <Button 
+            onClick={handleSelectAll}
+            disabled={readyCount === 0}
+          >
+            {isAllSelected ? '取消全选' : '全选'}
           </Button>
-        </Upload>
+          <Button 
+            icon={<ReloadOutlined />} 
+            onClick={loadKnowledgeList}
+            loading={loading}
+          >
+            刷新
+          </Button>
+        </Space>
       }
     >
       <div className="knowledge-manager">
@@ -251,33 +206,32 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({
           </div>
         )}
 
+        {/* 已选提示 */}
+        {selectedIds.length > 0 && (
+          <div className="selected-hint">
+            <Tag color="blue">已选择 {selectedIds.length} 个知识库用于对话</Tag>
+          </div>
+        )}
+
         {/* 知识库列表 */}
         <div className="knowledge-list-header">
           <span>文档列表 ({knowledgeList.length})</span>
-          <Button
-            type="text"
-            icon={<ReloadOutlined />}
-            onClick={loadKnowledgeList}
-            loading={loading}
-            size="small"
-          >
-            刷新
-          </Button>
         </div>
 
         <List
           className="knowledge-list"
           loading={loading}
           dataSource={knowledgeList}
-          locale={{ emptyText: <Empty description="暂无文档，请上传" /> }}
+          locale={{ emptyText: <Empty description="暂无知识库文档" /> }}
           renderItem={(item) => {
             const status = statusConfig[item.status];
             const isSelected = selectedIds.includes(item.id);
+            const isReady = item.status === 'ready';
 
             return (
               <List.Item
-                className={`knowledge-item ${isSelected ? 'selected' : ''}`}
-                onClick={() => item.status === 'ready' && handleToggleSelect(item.id)}
+                className={`knowledge-item ${isSelected ? 'selected' : ''} ${isReady ? 'clickable' : 'disabled'}`}
+                onClick={() => isReady && handleToggleSelect(item.id)}
               >
                 <div className="item-content">
                   <div className="item-icon">
@@ -301,32 +255,7 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({
                       <div className="item-error">{item.errorMessage}</div>
                     )}
                   </div>
-                  <div className="item-actions" onClick={(e) => e.stopPropagation()}>
-                    {item.status === 'error' && (
-                      <Tooltip title="重新处理">
-                        <Button
-                          type="text"
-                          icon={<ReloadOutlined />}
-                          onClick={() => handleReprocess(item.id)}
-                        />
-                      </Tooltip>
-                    )}
-                    <Popconfirm
-                      title="确定删除此文档吗？"
-                      description="删除后将无法恢复"
-                      onConfirm={() => handleDelete(item.id)}
-                      okText="删除"
-                      cancelText="取消"
-                    >
-                      <Tooltip title="删除">
-                        <Button type="text" danger icon={<DeleteOutlined />} />
-                      </Tooltip>
-                    </Popconfirm>
-                  </div>
                 </div>
-                {item.status === 'processing' && (
-                  <Progress percent={50} status="active" showInfo={false} size="small" />
-                )}
               </List.Item>
             );
           }}
@@ -334,8 +263,8 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({
 
         {/* 提示信息 */}
         <div className="knowledge-tips">
-          <p>💡 支持 PDF、TXT、MD、Excel(xlsx/xls)、CSV 格式，单文件最大 10MB</p>
-          <p>📌 点击文档可选择用于对话的知识库</p>
+          <p>� 点击文档可选择用于对话的知识库</p>
+          <p>� 文档管理请访问后台管理系统</p>
         </div>
       </div>
     </Drawer>
