@@ -38,16 +38,27 @@ const decodeFileName = (filename) => {
   return filename;
 };
 
-// 动态导入 pdf-parse（解决 ES Module 兼容性问题）
-// pdf-parse@1.1.1 是一个函数，直接传入 buffer 返回 Promise
-let pdfParse = null;
-const loadPdfParse = async () => {
-  if (!pdfParse) {
-    const module = await import('pdf-parse');
-    // pdf-parse@1.1.1 默认导出是一个函数
-    pdfParse = module.default;
+// 使用 pdfjs-dist 解析 PDF（更稳定）
+const parsePDF = async (buffer) => {
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  
+  // 将 Buffer 转换为 Uint8Array
+  const uint8Array = new Uint8Array(buffer);
+  
+  // 加载 PDF 文档
+  const loadingTask = pdfjsLib.getDocument({ data: uint8Array });
+  const pdf = await loadingTask.promise;
+  
+  // 提取所有页面的文本
+  let fullText = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items.map(item => item.str).join(' ');
+    fullText += pageText + '\n';
   }
-  return pdfParse;
+  
+  return fullText.trim();
 };
 
 const router = express.Router();
@@ -94,10 +105,9 @@ const parseFileContent = async (filePath, fileType) => {
 
   switch (fileType) {
     case 'pdf':
-      const pdfParser = await loadPdfParse();
-      // pdf-parse@1.1.1: 直接调用函数，传入 buffer，返回 { text, numpages, info }
-      const pdfData = await pdfParser(buffer);
-      return pdfData.text;
+      // 使用 pdfjs-dist 解析 PDF
+      const pdfText = await parsePDF(buffer);
+      return pdfText;
 
     case 'txt':
     case 'md':
