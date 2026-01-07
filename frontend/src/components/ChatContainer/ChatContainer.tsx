@@ -27,6 +27,7 @@ import {
   createSession, 
   getSessionDetail, 
   deleteSession,
+  updateSession,
   sendMessageStream,
   type ModelInfo, 
   type Message, 
@@ -286,6 +287,12 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
     }
   }, []);
 
+  // 用于保存当前选中模型的 ref，避免 useEffect 依赖
+  const currentModelRef = useRef(currentModel);
+  useEffect(() => {
+    currentModelRef.current = currentModel;
+  }, [currentModel]);
+
   // 检查服务器状态和获取模型列表
   useEffect(() => {
     const checkServer = async () => {
@@ -297,7 +304,8 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
         if (response.models.length > 0) {
           setModels(response.models);
           const modelNames = response.models.map(m => m.name);
-          if (!modelNames.includes(currentModel)) {
+          // 只有当当前模型不在列表中时才重置
+          if (!modelNames.includes(currentModelRef.current)) {
             setCurrentModel(response.defaultModel || modelNames[0]);
           }
         }
@@ -309,7 +317,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
     checkServer();
     const interval = setInterval(checkServer, 30000);
     return () => clearInterval(interval);
-  }, [currentModel, loadSessions]);
+  }, [loadSessions]);
 
   // 选择会话
   const handleSelectSession = async (sessionId: string) => {
@@ -433,8 +441,20 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
     setRagContexts([]);
   };
 
-  const handleModelChange = (value: string) => {
+  const handleModelChange = async (value: string) => {
     setCurrentModel(value);
+    // 如果有当前会话，同步更新会话的模型设置
+    if (currentSessionId) {
+      try {
+        await updateSession(currentSessionId, { model: value });
+        // 更新本地会话列表中的模型信息
+        setSessions(prev => prev.map(s => 
+          s._id === currentSessionId ? { ...s, model: value } : s
+        ));
+      } catch (err) {
+        console.error('更新会话模型失败:', err);
+      }
+    }
   };
 
   const handlePromptClick = (info: { data: { label?: string } }) => {
