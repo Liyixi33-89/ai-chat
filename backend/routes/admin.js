@@ -179,6 +179,7 @@ const adminAuth = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) {
+      console.log('adminAuth: 未提供 token');
       return res.status(401).json({ error: '请先登录' });
     }
 
@@ -186,13 +187,15 @@ const adminAuth = async (req, res, next) => {
     const user = await User.findById(decoded.userId);
     
     if (!user || user.role !== 'admin') {
+      console.log('adminAuth: 用户无权限', { userId: decoded.userId, userRole: user?.role });
       return res.status(403).json({ error: '无权限访问' });
     }
 
     req.user = user;
     next();
   } catch (error) {
-    res.status(401).json({ error: '认证失败' });
+    console.error('adminAuth 认证失败:', error.message);
+    res.status(401).json({ error: '认证失败', details: error.message });
   }
 };
 
@@ -396,6 +399,35 @@ router.get('/admin/knowledge', adminAuth, async (req, res) => {
   } catch (error) {
     console.error('获取文档列表失败:', error);
     res.status(500).json({ error: '获取文档列表失败' });
+  }
+});
+
+// 批量更新文档分类 - 必须在 :id 路由之前定义
+router.put('/admin/knowledge/batch-category', adminAuth, async (req, res) => {
+  try {
+    const { documentIds, category } = req.body;
+    
+    console.log('批量更新分类请求:', { documentIds, category });
+    
+    if (!documentIds || documentIds.length === 0) {
+      return res.status(400).json({ error: '请选择要更新的文档' });
+    }
+
+    const result = await Knowledge.updateMany(
+      { _id: { $in: documentIds } },
+      { $set: { category: category || '未分类' } }
+    );
+
+    console.log('批量更新分类结果:', result);
+
+    res.json({ 
+      success: true, 
+      message: `已更新 ${documentIds.length} 个文档的分类`,
+      modifiedCount: result.modifiedCount 
+    });
+  } catch (error) {
+    console.error('批量更新分类失败:', error);
+    res.status(500).json({ error: '批量更新分类失败', details: error.message });
   }
 });
 
@@ -676,27 +708,6 @@ router.get('/admin/categories', adminAuth, async (req, res) => {
   } catch (error) {
     console.error('获取分类列表失败:', error);
     res.status(500).json({ error: '获取分类列表失败' });
-  }
-});
-
-// 批量更新文档分类
-router.put('/admin/knowledge/batch-category', adminAuth, async (req, res) => {
-  try {
-    const { documentIds, category } = req.body;
-    
-    if (!documentIds || documentIds.length === 0) {
-      return res.status(400).json({ error: '请选择要更新的文档' });
-    }
-
-    await Knowledge.updateMany(
-      { _id: { $in: documentIds } },
-      { $set: { category: category || '未分类' } }
-    );
-
-    res.json({ success: true, message: `已更新 ${documentIds.length} 个文档的分类` });
-  } catch (error) {
-    console.error('批量更新分类失败:', error);
-    res.status(500).json({ error: '批量更新分类失败' });
   }
 });
 

@@ -254,231 +254,7 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-/**
- * 上传文档
- * POST /api/knowledge/upload
- */
-router.post('/upload', authMiddleware, upload.single('file'), async (req, res) => {
-  let filePath = null;
-  
-  try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, error: '请选择文件' });
-    }
-
-    const { originalname, size, path: uploadedPath } = req.file;
-    filePath = uploadedPath;
-    
-    // 解码文件名，处理中文乱码
-    const decodedOriginalName = decodeFileName(originalname);
-    console.log('原始文件名:', originalname);
-    console.log('解码后文件名:', decodedOriginalName);
-    
-    const ext = path.extname(decodedOriginalName).toLowerCase().slice(1);
-    const docName = req.body.name || decodedOriginalName.replace(/\.[^/.]+$/, '');
-
-    // 先解析文件内容
-    const content = await parseFileContent(filePath, ext);
-    
-    if (!content || content.trim().length === 0) {
-      // 删除临时文件
-      try { fs.unlinkSync(filePath); } catch (e) {}
-      return res.status(400).json({ success: false, error: '文件内容为空，请检查文件' });
-    }
-
-    // 创建知识库记录（包含内容）
-    const knowledge = new Knowledge({
-      userId: req.userId,
-      name: docName,
-      originalName: decodedOriginalName,  // 使用解码后的文件名
-      fileType: ext,
-      fileSize: size,
-      content: content,
-      status: 'processing',
-    });
-
-    await knowledge.save();
-
-    // 删除临时文件
-    try { fs.unlinkSync(filePath); } catch (e) {}
-    filePath = null;
-
-    // 异步处理向量化
-    (async () => {
-      try {
-        await processDocument(knowledge._id, req.userId, content);
-        console.log(`文档 "${docName}" 向量化处理完成`);
-      } catch (error) {
-        console.error('向量化处理失败:', error);
-        knowledge.status = 'error';
-        knowledge.errorMessage = error.message;
-        await knowledge.save();
-      }
-    })();
-
-    res.json({
-      success: true,
-      data: {
-        id: knowledge._id,
-        name: knowledge.name,
-        status: knowledge.status,
-      },
-      message: '文档上传成功，正在处理向量化...',
-    });
-  } catch (error) {
-    console.error('上传文档失败:', error);
-    // 清理临时文件
-    if (filePath) {
-      try { fs.unlinkSync(filePath); } catch (e) {}
-    }
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取单个知识库详情
- * GET /api/knowledge/:id
- */
-router.get('/:id', authMiddleware, async (req, res) => {
-  try {
-    const knowledge = await Knowledge.findOne({
-      _id: req.params.id,
-      userId: req.userId,
-    }).lean();
-
-    if (!knowledge) {
-      return res.status(404).json({ success: false, error: '知识库不存在' });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        id: knowledge._id,
-        name: knowledge.name,
-        originalName: knowledge.originalName,
-        fileType: knowledge.fileType,
-        fileSize: knowledge.fileSize,
-        chunkCount: knowledge.chunkCount,
-        status: knowledge.status,
-        errorMessage: knowledge.errorMessage,
-        contentPreview: knowledge.content?.substring(0, 500) + '...',
-        createdAt: knowledge.createdAt,
-        updatedAt: knowledge.updatedAt,
-      },
-    });
-  } catch (error) {
-    console.error('获取知识库详情失败:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 删除知识库
- * DELETE /api/knowledge/:id
- */
-router.delete('/:id', authMiddleware, async (req, res) => {
-  try {
-    const knowledge = await Knowledge.findOne({
-      _id: req.params.id,
-      userId: req.userId,
-    });
-
-    if (!knowledge) {
-      return res.status(404).json({ success: false, error: '知识库不存在' });
-    }
-
-    // 删除关联的向量块
-    await VectorChunk.deleteMany({ knowledgeId: req.params.id });
-
-    // 删除知识库记录
-    await Knowledge.deleteOne({ _id: req.params.id });
-
-    res.json({ success: true, message: '知识库删除成功' });
-  } catch (error) {
-    console.error('删除知识库失败:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 知识库搜索
- * POST /api/knowledge/search
- */
-router.post('/search', authMiddleware, async (req, res) => {
-  try {
-    const { query, knowledgeIds, topK = 5, minScore = 0.5 } = req.body;
-
-    if (!query) {
-      return res.status(400).json({ success: false, error: '请输入搜索内容' });
-    }
-
-    const results = await semanticSearch(query, req.userId, {
-      topK,
-      minScore,
-      knowledgeIds,
-    });
-
-    res.json({
-      success: true,
-      data: results.map(r => ({
-        content: r.content,
-        score: r.score.toFixed(4),
-        knowledgeId: r.knowledgeId,
-        knowledgeName: r.knowledgeName,
-        chunkIndex: r.chunkIndex,
-      })),
-    });
-  } catch (error) {
-    console.error('知识库搜索失败:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 重新处理文档
- * POST /api/knowledge/:id/reprocess
- */
-router.post('/:id/reprocess', authMiddleware, async (req, res) => {
-  try {
-    const knowledge = await Knowledge.findOne({
-      _id: req.params.id,
-      userId: req.userId,
-    });
-
-    if (!knowledge) {
-      return res.status(404).json({ success: false, error: '知识库不存在' });
-    }
-
-    // 删除旧的向量块
-    await VectorChunk.deleteMany({ knowledgeId: req.params.id });
-
-    // 重置状态
-    knowledge.status = 'processing';
-    knowledge.chunkCount = 0;
-    knowledge.errorMessage = '';
-    await knowledge.save();
-
-    // 异步重新处理
-    (async () => {
-      try {
-        await processDocument(knowledge._id, req.userId, knowledge.content);
-        console.log(`文档 "${knowledge.name}" 重新处理完成`);
-      } catch (error) {
-        console.error('重新处理文档失败:', error);
-        knowledge.status = 'error';
-        knowledge.errorMessage = error.message;
-        await knowledge.save();
-      }
-    })();
-
-    res.json({ success: true, message: '文档正在重新处理中...' });
-  } catch (error) {
-    console.error('重新处理文档失败:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ==================== 分析模板 API ====================
+// ==================== 分析模板 API (必须放在 /:id 路由之前) ====================
 
 /**
  * 获取公开的分析模板列表
@@ -678,6 +454,242 @@ router.delete('/templates/:id', authMiddleware, async (req, res) => {
     res.json({ success: true, message: '模板删除成功' });
   } catch (error) {
     console.error('删除分析模板失败:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 上传文档
+ * POST /api/knowledge/upload
+ */
+router.post('/upload', authMiddleware, upload.single('file'), async (req, res) => {
+  let filePath = null;
+  
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: '请选择文件' });
+    }
+
+    const { originalname, size, path: uploadedPath } = req.file;
+    filePath = uploadedPath;
+    
+    // 解码文件名，处理中文乱码
+    const decodedOriginalName = decodeFileName(originalname);
+    console.log('原始文件名:', originalname);
+    console.log('解码后文件名:', decodedOriginalName);
+    
+    const ext = path.extname(decodedOriginalName).toLowerCase().slice(1);
+    const docName = req.body.name || decodedOriginalName.replace(/\.[^/.]+$/, '');
+
+    // 先解析文件内容
+    const content = await parseFileContent(filePath, ext);
+    
+    if (!content || content.trim().length === 0) {
+      // 删除临时文件
+      try { fs.unlinkSync(filePath); } catch (e) {}
+      return res.status(400).json({ success: false, error: '文件内容为空，请检查文件' });
+    }
+
+    // 创建知识库记录（包含内容）
+    const knowledge = new Knowledge({
+      userId: req.userId,
+      name: docName,
+      originalName: decodedOriginalName,  // 使用解码后的文件名
+      fileType: ext,
+      fileSize: size,
+      content: content,
+      status: 'processing',
+    });
+
+    await knowledge.save();
+
+    // 删除临时文件
+    try { fs.unlinkSync(filePath); } catch (e) {}
+    filePath = null;
+
+    // 异步处理向量化
+    (async () => {
+      try {
+        await processDocument(knowledge._id, req.userId, content);
+        console.log(`文档 "${docName}" 向量化处理完成`);
+      } catch (error) {
+        console.error('向量化处理失败:', error);
+        knowledge.status = 'error';
+        knowledge.errorMessage = error.message;
+        await knowledge.save();
+      }
+    })();
+
+    res.json({
+      success: true,
+      data: {
+        id: knowledge._id,
+        name: knowledge.name,
+        status: knowledge.status,
+      },
+      message: '文档上传成功，正在处理向量化...',
+    });
+  } catch (error) {
+    console.error('上传文档失败:', error);
+    // 清理临时文件
+    if (filePath) {
+      try { fs.unlinkSync(filePath); } catch (e) {}
+    }
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 获取单个知识库详情
+ * GET /api/knowledge/:id
+ * Query params:
+ *   - fullContent: 是否返回完整内容（默认 false，只返回预览）
+ */
+router.get('/:id', authMiddleware, async (req, res) => {
+  try {
+    const { fullContent } = req.query;
+    const knowledge = await Knowledge.findOne({
+      _id: req.params.id,
+      userId: req.userId,
+    }).lean();
+
+    if (!knowledge) {
+      return res.status(404).json({ success: false, error: '知识库不存在' });
+    }
+
+    const responseData = {
+      id: knowledge._id,
+      name: knowledge.name,
+      originalName: knowledge.originalName,
+      fileType: knowledge.fileType,
+      fileSize: knowledge.fileSize,
+      chunkCount: knowledge.chunkCount,
+      status: knowledge.status,
+      category: knowledge.category || '未分类',
+      errorMessage: knowledge.errorMessage,
+      createdAt: knowledge.createdAt,
+      updatedAt: knowledge.updatedAt,
+    };
+
+    // 根据 fullContent 参数决定返回完整内容还是预览
+    if (fullContent === 'true') {
+      responseData.content = knowledge.content || '';
+    } else {
+      responseData.contentPreview = knowledge.content?.substring(0, 500) + '...';
+    }
+
+    res.json({
+      success: true,
+      data: responseData,
+    });
+  } catch (error) {
+    console.error('获取知识库详情失败:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 删除知识库
+ * DELETE /api/knowledge/:id
+ */
+router.delete('/:id', authMiddleware, async (req, res) => {
+  try {
+    const knowledge = await Knowledge.findOne({
+      _id: req.params.id,
+      userId: req.userId,
+    });
+
+    if (!knowledge) {
+      return res.status(404).json({ success: false, error: '知识库不存在' });
+    }
+
+    // 删除关联的向量块
+    await VectorChunk.deleteMany({ knowledgeId: req.params.id });
+
+    // 删除知识库记录
+    await Knowledge.deleteOne({ _id: req.params.id });
+
+    res.json({ success: true, message: '知识库删除成功' });
+  } catch (error) {
+    console.error('删除知识库失败:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 知识库搜索
+ * POST /api/knowledge/search
+ */
+router.post('/search', authMiddleware, async (req, res) => {
+  try {
+    const { query, knowledgeIds, topK = 5, minScore = 0.5 } = req.body;
+
+    if (!query) {
+      return res.status(400).json({ success: false, error: '请输入搜索内容' });
+    }
+
+    const results = await semanticSearch(query, req.userId, {
+      topK,
+      minScore,
+      knowledgeIds,
+    });
+
+    res.json({
+      success: true,
+      data: results.map(r => ({
+        content: r.content,
+        score: r.score.toFixed(4),
+        knowledgeId: r.knowledgeId,
+        knowledgeName: r.knowledgeName,
+        chunkIndex: r.chunkIndex,
+      })),
+    });
+  } catch (error) {
+    console.error('知识库搜索失败:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 重新处理文档
+ * POST /api/knowledge/:id/reprocess
+ */
+router.post('/:id/reprocess', authMiddleware, async (req, res) => {
+  try {
+    const knowledge = await Knowledge.findOne({
+      _id: req.params.id,
+      userId: req.userId,
+    });
+
+    if (!knowledge) {
+      return res.status(404).json({ success: false, error: '知识库不存在' });
+    }
+
+    // 删除旧的向量块
+    await VectorChunk.deleteMany({ knowledgeId: req.params.id });
+
+    // 重置状态
+    knowledge.status = 'processing';
+    knowledge.chunkCount = 0;
+    knowledge.errorMessage = '';
+    await knowledge.save();
+
+    // 异步重新处理
+    (async () => {
+      try {
+        await processDocument(knowledge._id, req.userId, knowledge.content);
+        console.log(`文档 "${knowledge.name}" 重新处理完成`);
+      } catch (error) {
+        console.error('重新处理文档失败:', error);
+        knowledge.status = 'error';
+        knowledge.errorMessage = error.message;
+        await knowledge.save();
+      }
+    })();
+
+    res.json({ success: true, message: '文档正在重新处理中...' });
+  } catch (error) {
+    console.error('重新处理文档失败:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

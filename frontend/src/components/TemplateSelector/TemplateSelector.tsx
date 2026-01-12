@@ -26,6 +26,7 @@ import {
   PlusOutlined,
   StarOutlined,
   StarFilled,
+  BookOutlined,
 } from '@ant-design/icons';
 import {
   getAnalysisTemplates,
@@ -368,6 +369,27 @@ const TemplateSelector: React.FC<TemplateSelectorProps> = ({
             <div className="config-title">
               <RobotOutlined /> 配置参数
             </div>
+            
+            {/* 知识库参考资料展示 */}
+            {knowledgeContent ? (
+              <div className="knowledge-reference">
+                <div className="knowledge-reference-title">
+                  <BookOutlined /> 参考资料 (来自知识库)
+                </div>
+                <div className="knowledge-reference-content">
+                  {knowledgeContent.split('\n').slice(0, 20).join('\n')}
+                  {knowledgeContent.split('\n').length > 20 && (
+                    <div className="knowledge-reference-more">
+                      ... 还有更多内容 (共 {knowledgeContent.length} 字符)
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="knowledge-reference-empty">
+                <BookOutlined /> 暂无知识库内容，请先选择知识库
+              </div>
+            )}
             
             {selectedTemplate.variables.length === 0 ? (
               <div className="no-variables">该模板无需配置参数</div>

@@ -78,6 +78,8 @@ export interface Knowledge {
   status: 'processing' | 'ready' | 'error';
   errorMessage?: string;
   contentPreview?: string;
+  content?: string; // 完整内容（需要 fullContent=true 参数）
+  category?: string; // 文档分类
   createdAt: string;
   updatedAt?: string;
 }
@@ -297,9 +299,12 @@ export const getKnowledgeList = async (): Promise<Knowledge[]> => {
 
 /**
  * 获取知识库详情
+ * @param id 知识库ID
+ * @param fullContent 是否获取完整内容（默认 false）
  */
-export const getKnowledgeDetail = async (id: string): Promise<Knowledge> => {
-  const response = await apiClient.get<{ success: boolean; data: Knowledge }>(`/api/knowledge/${id}`);
+export const getKnowledgeDetail = async (id: string, fullContent = false): Promise<Knowledge> => {
+  const params = fullContent ? '?fullContent=true' : '';
+  const response = await apiClient.get<{ success: boolean; data: Knowledge }>(`/api/knowledge/${id}${params}`);
   return response.data.data;
 };
 

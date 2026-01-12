@@ -302,11 +302,23 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
     const loadKnowledgeContent = async () => {
       if (selectedKnowledgeIds.length > 0) {
         try {
+          // 使用 fullContent=true 获取完整内容
           const contents = await Promise.all(
-            selectedKnowledgeIds.map(id => getKnowledgeDetail(id))
+            selectedKnowledgeIds.map(id => getKnowledgeDetail(id, true))
           );
-          const combinedContent = contents
-            .map(k => `【${k.name}】\n${k.contentPreview || ''}`)
+          // 按分类分组展示
+          const contentByCategory: Record<string, string[]> = {};
+          contents.forEach(k => {
+            const category = k.category || '未分类';
+            if (!contentByCategory[category]) {
+              contentByCategory[category] = [];
+            }
+            contentByCategory[category].push(`【${k.name}】\n${k.content || ''}`);
+          });
+          
+          // 格式化输出
+          const combinedContent = Object.entries(contentByCategory)
+            .map(([cat, docs]) => `=== ${cat} ===\n${docs.join('\n\n')}`)
             .join('\n\n');
           setKnowledgeContent(combinedContent);
         } catch (err) {
@@ -609,14 +621,16 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
           </div>
 
           <div className="header-right">
-            <Tooltip title="分析模板">
+            <Tooltip title="选择分析模板 - 让AI以特定角色回答">
               <button
-                className="template-btn"
+                className={`template-btn ${selectedTemplate ? 'template-active' : ''}`}
                 onClick={() => setTemplateOpen(true)}
                 aria-label="分析模板"
                 tabIndex={0}
               >
                 <AppstoreOutlined />
+                <span className="template-btn-text">分析模板</span>
+                {selectedTemplate && <span className="template-dot" />}
               </button>
             </Tooltip>
             <Tooltip title="管理知识库">
@@ -689,10 +703,27 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
               {/* 分析模板提示 */}
               {selectedTemplate && (
                 <div className="template-hint">
-                  <AppstoreOutlined /> 已选择模板: {selectedTemplate.name}
-                  <button className="template-change-btn" onClick={() => setTemplateOpen(true)}>
-                    更换模板
-                  </button>
+                  <AppstoreOutlined /> 已选择模板: <strong>{selectedTemplate.name}</strong>
+                  <div className="template-hint-desc">{selectedTemplate.description}</div>
+                  <div className="template-hint-actions">
+                    <button className="template-change-btn" onClick={() => setTemplateOpen(true)}>
+                      更换模板
+                    </button>
+                    <button className="template-clear-btn" onClick={() => setSelectedTemplate(null)}>
+                      取消选择
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 模板选择提示卡片 */}
+              {!selectedTemplate && (
+                <div className="template-prompt-card" onClick={() => setTemplateOpen(true)}>
+                  <AppstoreOutlined className="template-prompt-icon" />
+                  <div className="template-prompt-content">
+                    <div className="template-prompt-title">选择分析模板</div>
+                    <div className="template-prompt-desc">让 AI 以产品经理、老师等不同角色回答你的问题</div>
+                  </div>
                 </div>
               )}
             </div>

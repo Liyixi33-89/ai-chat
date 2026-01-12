@@ -161,3 +161,58 @@
   color: #999;
   padding: 32px;
 }
+
+/* 知识库参考资料样式 */
+.knowledge-reference {
+  background: linear-gradient(135deg, #f6ffed 0%, #e6fffb 100%);
+  border: 1px solid #b7eb8f;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.knowledge-reference-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #52c41a;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.knowledge-reference-content {
+  font-size: 12px;
+  color: #333;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 8px;
+  border-radius: 4px;
+  line-height: 1.6;
+}
+
+.knowledge-reference-more {
+  color: #999;
+  font-size: 11px;
+  margin-top: 8px;
+  text-align: right;
+  font-style: italic;
+}
+
+.knowledge-reference-empty {
+  background: #f5f5f5;
+  border: 1px dashed #d9d9d9;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}

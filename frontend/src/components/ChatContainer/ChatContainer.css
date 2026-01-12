@@ -732,49 +732,160 @@
   gap: 8px;
 }
 
+/* 分析模板提示 */
 .template-hint {
-  margin-top: 12px;
-  padding: 12px 16px;
+  margin-top: 16px;
+  padding: 16px 20px;
   background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%);
-  border-radius: 8px;
-  color: #52c41a;
+  border-radius: 12px;
+  color: #389e0d;
   font-size: 0.875rem;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
+  border: 1px solid #b7eb8f;
+  max-width: 400px;
+}
+
+.template-hint strong {
+  color: #237804;
+}
+
+.template-hint-desc {
+  font-size: 0.75rem;
+  color: #52c41a;
+  opacity: 0.8;
+}
+
+.template-hint-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .template-change-btn {
-  margin-left: auto;
-  padding: 4px 12px;
+  padding: 6px 14px;
   background: #52c41a;
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 0.75rem;
-  transition: background 0.2s;
+  transition: all 0.2s;
+  font-weight: 500;
 }
 
 .template-change-btn:hover {
   background: #73d13d;
+  transform: translateY(-1px);
 }
 
-.template-btn {
-  background: none;
-  border: none;
-  padding: 8px;
-  cursor: pointer;
-  color: #666;
+.template-clear-btn {
+  padding: 6px 14px;
+  background: transparent;
+  color: #52c41a;
+  border: 1px solid #b7eb8f;
   border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.75rem;
   transition: all 0.2s;
+}
+
+.template-clear-btn:hover {
+  background: #f6ffed;
+  border-color: #52c41a;
+}
+
+/* 分析模板按钮 */
+.template-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%);
+  border: 1px solid #b7eb8f;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #389e0d;
+  font-size: 14px;
+  transition: all 0.2s;
+  margin-right: 12px;
+  position: relative;
 }
 
 .template-btn:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: linear-gradient(135deg, #d9f7be 0%, #b7eb8f 100%);
+  border-color: #52c41a;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(82, 196, 26, 0.2);
+}
+
+.template-btn.template-active {
+  background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%);
+  color: white;
+  border-color: #389e0d;
+}
+
+.template-btn.template-active:hover {
+  background: linear-gradient(135deg, #73d13d 0%, #52c41a 100%);
+}
+
+.template-btn-text {
+  font-weight: 500;
+}
+
+.template-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  background: #ff4d4f;
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+/* 分析模板选择提示卡片 */
+.template-prompt-card {
+  margin-top: 20px;
+  padding: 20px 24px;
+  background: linear-gradient(135deg, #ffffff 0%, #f6ffed 100%);
+  border: 2px dashed #b7eb8f;
+  border-radius: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: all 0.3s;
+  max-width: 450px;
+}
+
+.template-prompt-card:hover {
+  background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%);
+  border-color: #52c41a;
+  border-style: solid;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(82, 196, 26, 0.15);
+}
+
+.template-prompt-icon {
+  font-size: 32px;
   color: #52c41a;
-}  border: 1px solid #91d5ff;
+}
+
+.template-prompt-content {
+  flex: 1;
+}
+
+.template-prompt-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #237804;
+  margin-bottom: 4px;
+}
+
+.template-prompt-desc {
+  font-size: 0.875rem;
+  color: #52c41a;
+  opacity: 0.85;
 }
