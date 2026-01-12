@@ -13,13 +13,15 @@ import {
   MenuOutlined,
   LoadingOutlined,
   BookOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import Sidebar from '../Sidebar';
 import KnowledgeManager from '../Knowledge';
+import TemplateSelector from '../TemplateSelector';
 import { 
   getModels, 
   healthCheck, 
@@ -33,7 +35,9 @@ import {
   type Message, 
   type Session,
   type User,
-  type RAGContext
+  type RAGContext,
+  type AnalysisTemplate,
+  getKnowledgeDetail,
 } from '../../services/api';
 import 'highlight.js/styles/github-dark.css';
 import './ChatContainer.css';
@@ -271,6 +275,12 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
   const [useKnowledge, setUseKnowledge] = useState(false);
   const [ragContexts, setRagContexts] = useState<RAGContext[]>([]);
   
+  // 分析模板相关状态
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<AnalysisTemplate | null>(null);
+  const [knowledgeContent, setKnowledgeContent] = useState<string>('');
+  const [customSystemPrompt, setCustomSystemPrompt] = useState<string>('');
+  
   // 用户信息
   const [user] = useState<User | null>(() => {
     const savedUser = localStorage.getItem('user');
@@ -286,6 +296,28 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
       console.error('加载会话列表失败:', err);
     }
   }, []);
+
+  // 当选择知识库时，加载知识库内容用于模板
+  useEffect(() => {
+    const loadKnowledgeContent = async () => {
+      if (selectedKnowledgeIds.length > 0) {
+        try {
+          const contents = await Promise.all(
+            selectedKnowledgeIds.map(id => getKnowledgeDetail(id))
+          );
+          const combinedContent = contents
+            .map(k => `【${k.name}】\n${k.contentPreview || ''}`)
+            .join('\n\n');
+          setKnowledgeContent(combinedContent);
+        } catch (err) {
+          console.error('加载知识库内容失败:', err);
+        }
+      } else {
+        setKnowledgeContent('');
+      }
+    };
+    loadKnowledgeContent();
+  }, [selectedKnowledgeIds]);
 
   // 用于保存当前选中模型的 ref，避免 useEffect 依赖
   const currentModelRef = useRef(currentModel);
@@ -368,6 +400,13 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
     }
   };
 
+  // 应用分析模板
+  const handleApplyTemplate = (systemPrompt: string, userPrompt: string) => {
+    setCustomSystemPrompt(systemPrompt);
+    setInputValue(userPrompt);
+    // 可以在这里直接发送，或者让用户确认后发送
+  };
+
   // 发送消息
   const handleSend = async (content: string) => {
     if (!content.trim() || isLoading || !isServerOnline) return;
@@ -398,9 +437,14 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
     try {
       const allMessages = [...messages, userMessage];
       
+      // 如果有自定义系统提示词，添加到消息开头
+      const messagesWithSystem = customSystemPrompt 
+        ? [{ role: 'system' as const, content: customSystemPrompt }, ...allMessages]
+        : allMessages;
+      
       await sendMessageStream(
         { 
-          messages: allMessages, 
+          messages: messagesWithSystem, 
           model: currentModel,
           sessionId: sessionId,
           useKnowledge: useKnowledge && selectedKnowledgeIds.length > 0,
@@ -419,6 +463,8 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
         () => {
           setIsLoading(false);
           loadSessions();
+          // 清除自定义系统提示词
+          setCustomSystemPrompt('');
         },
         (errMsg) => {
           setError(errMsg);
@@ -563,6 +609,16 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
           </div>
 
           <div className="header-right">
+            <Tooltip title="分析模板">
+              <button
+                className="template-btn"
+                onClick={() => setTemplateOpen(true)}
+                aria-label="分析模板"
+                tabIndex={0}
+              >
+                <AppstoreOutlined />
+              </button>
+            </Tooltip>
             <Tooltip title="管理知识库">
               <button
                 className="knowledge-btn"
@@ -629,6 +685,16 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
                   <BookOutlined /> 已启用 {selectedKnowledgeIds.length} 个知识库，AI 将基于知识库内容回答问题
                 </div>
               )}
+              
+              {/* 分析模板提示 */}
+              {selectedTemplate && (
+                <div className="template-hint">
+                  <AppstoreOutlined /> 已选择模板: {selectedTemplate.name}
+                  <button className="template-change-btn" onClick={() => setTemplateOpen(true)}>
+                    更换模板
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="messages-container">
@@ -693,6 +759,16 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onLogout }) => {
             setUseKnowledge(true);
           }
         }}
+      />
+      
+      {/* 分析模板选择器 */}
+      <TemplateSelector
+        open={templateOpen}
+        onClose={() => setTemplateOpen(false)}
+        selectedTemplate={selectedTemplate}
+        onSelectTemplate={setSelectedTemplate}
+        onApplyTemplate={handleApplyTemplate}
+        knowledgeContent={knowledgeContent}
       />
     </Layout>
   );

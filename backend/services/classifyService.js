@@ -16,6 +16,19 @@ const CHAT_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
  */
 export const classifyDocument = async (content, prompt, categories) => {
   try {
+    console.log('开始文档分类，分类选项:', categories);
+    
+    // 检查参数
+    if (!content || content.trim() === '') {
+      throw new Error('文档内容为空');
+    }
+    if (!prompt) {
+      throw new Error('分类 Prompt 为空');
+    }
+    if (!categories || categories.length === 0) {
+      throw new Error('分类选项为空');
+    }
+    
     // 截取文档内容（避免太长）
     const maxContentLength = 3000;
     const truncatedContent = content.length > maxContentLength 
@@ -39,6 +52,8 @@ ${truncatedContent}
 
 请直接返回分类名称：`;
 
+    console.log('调用 Ollama API，模型:', CHAT_MODEL);
+    
     const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -56,10 +71,14 @@ ${truncatedContent}
     });
 
     if (!response.ok) {
-      throw new Error(`AI API 请求失败: ${response.status}`);
+      const errorText = await response.text();
+      console.error('Ollama API 错误响应:', errorText);
+      throw new Error(`AI API 请求失败: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
+    console.log('Ollama API 响应:', JSON.stringify(data).substring(0, 200));
+    
     const result = data.message?.content?.trim() || '';
 
     // 验证返回的分类是否在可用列表中
@@ -71,9 +90,12 @@ ${truncatedContent}
            normalizedResult.toLowerCase().includes(c.toLowerCase())
     );
 
-    return matchedCategory || '未分类';
+    const finalCategory = matchedCategory || '未分类';
+    console.log('分类结果:', finalCategory, '(原始响应:', normalizedResult, ')');
+    
+    return finalCategory;
   } catch (error) {
-    console.error('文档分类失败:', error);
+    console.error('文档分类失败:', error.message);
     throw error;
   }
 };

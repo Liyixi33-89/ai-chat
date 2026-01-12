@@ -13,6 +13,7 @@ import User from '../models/User.js';
 import Knowledge from '../models/Knowledge.js';
 import VectorChunk from '../models/VectorChunk.js';
 import CategoryPrompt from '../models/CategoryPrompt.js';
+import AnalysisTemplate from '../models/AnalysisTemplate.js';
 import { getEmbedding, processDocument } from '../services/ragService.js';
 import { classifyDocument } from '../services/classifyService.js';
 
@@ -704,6 +705,8 @@ router.post('/admin/knowledge/auto-classify', adminAuth, async (req, res) => {
   try {
     const { documentIds, promptId } = req.body;
     
+    console.log('自动分类请求:', { documentIds, promptId });
+    
     if (!documentIds || documentIds.length === 0) {
       return res.status(400).json({ error: '请选择要分类的文档' });
     }
@@ -712,28 +715,50 @@ router.post('/admin/knowledge/auto-classify', adminAuth, async (req, res) => {
     let categoryPrompt;
     if (promptId) {
       categoryPrompt = await CategoryPrompt.findById(promptId);
+      console.log('查找 CategoryPrompt:', promptId, categoryPrompt ? '找到' : '未找到');
     } else {
       // 使用默认 Prompt
       categoryPrompt = await CategoryPrompt.findOne({ isDefault: true });
+      console.log('使用默认 Prompt:', categoryPrompt ? '找到' : '未找到');
     }
 
     if (!categoryPrompt) {
       return res.status(400).json({ error: '请先创建分类 Prompt 或指定一个 Prompt' });
     }
 
+    console.log('CategoryPrompt 详情:', {
+      name: categoryPrompt.name,
+      categories: categoryPrompt.categories,
+      prompt: categoryPrompt.prompt?.substring(0, 100) + '...',
+    });
+
     // 获取文档
     const documents = await Knowledge.find({ _id: { $in: documentIds } });
+    console.log(`找到 ${documents.length} 个文档`);
     
+    if (documents.length === 0) {
+      return res.status(400).json({ error: '未找到指定的文档' });
+    }
+
     // 使用 AI 进行分类
     const results = [];
     for (const doc of documents) {
       try {
+        console.log(`正在分类文档: ${doc.name}, 内容长度: ${doc.content?.length || 0}`);
+        
+        if (!doc.content || doc.content.trim() === '') {
+          results.push({ id: doc._id, name: doc.name, error: '文档内容为空', success: false });
+          continue;
+        }
+        
         const category = await classifyDocument(doc.content, categoryPrompt.prompt, categoryPrompt.categories);
+        console.log(`文档 ${doc.name} 分类结果: ${category}`);
+        
         doc.category = category;
         await doc.save();
         results.push({ id: doc._id, name: doc.name, category, success: true });
       } catch (error) {
-        console.error(`文档 ${doc.name} 分类失败:`, error);
+        console.error(`文档 ${doc.name} 分类失败:`, error.message);
         results.push({ id: doc._id, name: doc.name, error: error.message, success: false });
       }
     }
@@ -741,7 +766,286 @@ router.post('/admin/knowledge/auto-classify', adminAuth, async (req, res) => {
     res.json({ success: true, results });
   } catch (error) {
     console.error('自动分类失败:', error);
-    res.status(500).json({ error: '自动分类失败' });
+    res.status(500).json({ error: `自动分类失败: ${error.message}` });
+  }
+});
+
+// ==================== 分析模板管理 ====================
+
+// 获取所有分析模板（管理员）
+router.get('/admin/analysis-templates', adminAuth, async (req, res) => {
+  try {
+    const { category } = req.query;
+    const query = category ? { category } : {};
+
+    const templates = await AnalysisTemplate.find(query)
+      .sort({ isSystem: -1, category: 1, createdAt: -1 })
+      .populate('createdBy', 'username');
+
+    const categories = await AnalysisTemplate.distinct('category');
+
+    res.json({ templates, categories });
+  } catch (error) {
+    console.error('获取分析模板失败:', error);
+    res.status(500).json({ error: '获取分析模板失败' });
+  }
+});
+
+// 创建分析模板（管理员）
+router.post('/admin/analysis-templates', adminAuth, async (req, res) => {
+  try {
+    const { name, description, category, systemPrompt, userPromptTemplate, variables, exampleInput, exampleOutput, isPublic, isSystem } = req.body;
+    
+    if (!name || !systemPrompt || !userPromptTemplate) {
+      return res.status(400).json({ error: '请填写必要信息' });
+    }
+
+    const template = new AnalysisTemplate({
+      name,
+      description,
+      category: category || '通用',
+      systemPrompt,
+      userPromptTemplate,
+      variables: variables || [],
+      exampleInput,
+      exampleOutput,
+      isPublic: isPublic !== false,
+      isSystem: isSystem || false,
+      createdBy: req.user._id,
+    });
+
+    await template.save();
+    res.json({ success: true, template });
+  } catch (error) {
+    console.error('创建分析模板失败:', error);
+    res.status(500).json({ error: '创建分析模板失败' });
+  }
+});
+
+// 更新分析模板（管理员）
+router.put('/admin/analysis-templates/:id', adminAuth, async (req, res) => {
+  try {
+    const template = await AnalysisTemplate.findById(req.params.id);
+
+    if (!template) {
+      return res.status(404).json({ error: '模板不存在' });
+    }
+
+    const { name, description, category, systemPrompt, userPromptTemplate, variables, exampleInput, exampleOutput, isPublic, isSystem } = req.body;
+
+    if (name) template.name = name;
+    if (description !== undefined) template.description = description;
+    if (category) template.category = category;
+    if (systemPrompt) template.systemPrompt = systemPrompt;
+    if (userPromptTemplate) template.userPromptTemplate = userPromptTemplate;
+    if (variables) template.variables = variables;
+    if (exampleInput !== undefined) template.exampleInput = exampleInput;
+    if (exampleOutput !== undefined) template.exampleOutput = exampleOutput;
+    if (isPublic !== undefined) template.isPublic = isPublic;
+    if (isSystem !== undefined) template.isSystem = isSystem;
+
+    await template.save();
+    res.json({ success: true, template });
+  } catch (error) {
+    console.error('更新分析模板失败:', error);
+    res.status(500).json({ error: '更新分析模板失败' });
+  }
+});
+
+// 删除分析模板（管理员）
+router.delete('/admin/analysis-templates/:id', adminAuth, async (req, res) => {
+  try {
+    const template = await AnalysisTemplate.findById(req.params.id);
+    
+    if (!template) {
+      return res.status(404).json({ error: '模板不存在' });
+    }
+
+    await AnalysisTemplate.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('删除分析模板失败:', error);
+    res.status(500).json({ error: '删除分析模板失败' });
+  }
+});
+
+// 初始化系统预设模板
+router.post('/admin/analysis-templates/init-system', adminAuth, async (req, res) => {
+  try {
+    // 检查是否已存在系统模板
+    const existingSystem = await AnalysisTemplate.findOne({ isSystem: true });
+    if (existingSystem) {
+      return res.json({ success: true, message: '系统模板已存在' });
+    }
+
+    // 创建预设模板
+    const systemTemplates = [
+      {
+        name: '产品需求文档(PRD)',
+        description: '以产品经理的身份，根据文档内容生成完整的产品需求文档',
+        category: '产品',
+        systemPrompt: '你是一位资深的产品经理，拥有丰富的产品设计和需求分析经验。你需要根据用户提供的资料，撰写一份专业、完整的产品需求文档(PRD)。',
+        userPromptTemplate: `请根据以下资料，为「{title}」撰写一份完整的产品需求文档(PRD)。
+
+【参考资料】
+{content}
+
+请按以下结构输出PRD：
+1. **项目介绍**：简要描述项目背景和目标
+2. **问题陈述**：当前存在的问题和痛点
+3. **目标和目的**：具体的项目目标
+4. **用户故事**：以用户视角描述功能需求
+5. **功能需求**：详细的功能列表
+6. **技术要求**：技术实现建议
+7. **预期收益**：项目完成后的价值
+8. **关键绩效指标(KPI)**：可量化的成功指标
+9. **风险评估**：潜在风险和应对措施
+10. **结论**：总结和下一步行动`,
+        variables: [
+          { name: 'title', label: '产品/项目名称', type: 'text', required: true, defaultValue: '' },
+          { name: 'content', label: '参考资料(来自知识库)', type: 'textarea', required: false, defaultValue: '' },
+        ],
+        exampleInput: '在线教育平台',
+        exampleOutput: '# 在线教育平台 PRD\n\n## 1. 项目介绍\n本项目旨在打造一个面向K12学生的在线教育平台...',
+        isPublic: true,
+        isSystem: true,
+      },
+      {
+        name: '作文润色优化',
+        description: '以小学语文老师的身份，对学生作文进行润色和优化',
+        category: '教育',
+        systemPrompt: '你是一位资深的小学语文评阅老师，需要对学生作文中的语句进行优化和润色，让作文整体更加饱满。',
+        userPromptTemplate: `请对以下学生作文进行语句优化和润色。
+
+【学生作文】
+{content}
+
+请按以下要求执行：
+1. 针对作文中的语句，给出4处优化调整
+2. 理解语境，整句优化，对原文整段句子进行扩写、改写、润色，不要针对个别词汇优化
+3. 不要纠正原文中的错别字，需要改写整段句子
+4. 使用小学范围内的词汇和修辞手法进行润色
+5. 只分条输出优化内容，不要输出其他任何内容
+
+请严格按以下格式输出4处优化：
+1. \`原文\`优化为\`xxx\`
+2. \`原文\`优化为\`xxx\`
+3. \`原文\`优化为\`xxx\`
+4. \`原文\`优化为\`xxx\``,
+        variables: [
+          { name: 'content', label: '学生作文内容', type: 'textarea', required: true, defaultValue: '' },
+        ],
+        exampleInput: '今天天气很好，我和妈妈去公园玩。公园里有很多花，很漂亮。我们还看到了小鸟在唱歌。',
+        exampleOutput: '1. `今天天气很好`优化为`今天阳光明媚，天空湛蓝如洗`\n2. `公园里有很多花，很漂亮`优化为`公园里百花齐放，五颜六色的花朵像一片彩色的海洋`\n3. `我们还看到了小鸟在唱歌`优化为`树枝上的小鸟欢快地唱着歌，仿佛在欢迎我们的到来`\n4. `我和妈妈去公园玩`优化为`我牵着妈妈的手，蹦蹦跳跳地来到了美丽的公园`',
+        isPublic: true,
+        isSystem: true,
+      },
+      {
+        name: '文档总结摘要',
+        description: '对文档内容进行智能总结，提取关键信息',
+        category: '通用',
+        systemPrompt: '你是一位专业的文档分析师，擅长快速理解文档内容并提取关键信息，生成简洁明了的摘要。',
+        userPromptTemplate: `请对以下文档内容进行总结和摘要：
+
+【文档内容】
+{content}
+
+请按以下格式输出：
+## 文档摘要
+（200字以内的核心内容概述）
+
+## 关键要点
+- 要点1
+- 要点2
+- 要点3
+...
+
+## 重要数据/结论
+（如有具体数据或结论，请列出）`,
+        variables: [
+          { name: 'content', label: '文档内容(来自知识库)', type: 'textarea', required: true, defaultValue: '' },
+        ],
+        isPublic: true,
+        isSystem: true,
+      },
+      {
+        name: '技术文档解读',
+        description: '对技术文档进行通俗易懂的解读',
+        category: '技术',
+        systemPrompt: '你是一位资深的技术专家，擅长将复杂的技术概念用通俗易懂的语言解释清楚。',
+        userPromptTemplate: `请对以下技术文档进行解读，让非技术人员也能理解：
+
+【技术文档】
+{content}
+
+请从以下几个方面进行解读：
+1. **核心概念**：用简单的语言解释文档中的核心技术概念
+2. **实现原理**：用类比的方式说明技术实现原理
+3. **应用场景**：这项技术可以用在什么地方
+4. **优缺点分析**：客观分析技术的优势和局限性
+5. **学习建议**：如果想深入了解，应该从哪里开始`,
+        variables: [
+          { name: 'content', label: '技术文档内容', type: 'textarea', required: true, defaultValue: '' },
+        ],
+        isPublic: true,
+        isSystem: true,
+      },
+      {
+        name: '会议纪要整理',
+        description: '将会议记录整理成规范的会议纪要',
+        category: '办公',
+        systemPrompt: '你是一位专业的行政秘书，擅长整理会议记录，生成规范、清晰的会议纪要。',
+        userPromptTemplate: `请将以下会议记录整理成规范的会议纪要：
+
+【会议记录】
+{content}
+
+会议基本信息：
+- 会议主题：{title}
+- 会议时间：{meeting_time}
+- 参会人员：{participants}
+
+请按以下格式输出会议纪要：
+# {title} 会议纪要
+
+**会议时间**：{meeting_time}
+**参会人员**：{participants}
+**记录整理**：AI助手
+
+## 会议议题
+
+## 讨论要点
+
+## 决议事项
+
+## 待办事项
+| 序号 | 事项 | 负责人 | 完成时间 |
+|------|------|--------|----------|
+
+## 下次会议安排`,
+        variables: [
+          { name: 'title', label: '会议主题', type: 'text', required: true, defaultValue: '' },
+          { name: 'meeting_time', label: '会议时间', type: 'text', required: false, defaultValue: '' },
+          { name: 'participants', label: '参会人员', type: 'text', required: false, defaultValue: '' },
+          { name: 'content', label: '会议记录内容', type: 'textarea', required: true, defaultValue: '' },
+        ],
+        isPublic: true,
+        isSystem: true,
+      },
+    ];
+
+    for (const templateData of systemTemplates) {
+      const template = new AnalysisTemplate({
+        ...templateData,
+        createdBy: req.user._id,
+      });
+      await template.save();
+    }
+
+    res.json({ success: true, message: `已创建 ${systemTemplates.length} 个系统预设模板` });
+  } catch (error) {
+    console.error('初始化系统模板失败:', error);
+    res.status(500).json({ error: '初始化系统模板失败' });
   }
 });
 

@@ -82,6 +82,33 @@ export interface Knowledge {
   updatedAt?: string;
 }
 
+// 分析模板变量类型
+export interface TemplateVariable {
+  name: string;
+  label: string;
+  type: 'text' | 'textarea' | 'select';
+  options?: string[];
+  required: boolean;
+  defaultValue: string;
+}
+
+// 分析模板类型
+export interface AnalysisTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  systemPrompt: string;
+  userPromptTemplate: string;
+  variables: TemplateVariable[];
+  exampleInput?: string;
+  exampleOutput?: string;
+  isSystem: boolean;
+  isPublic: boolean;
+  createdBy: string;
+  createdAt: string;
+}
+
 // 知识库搜索结果
 export interface KnowledgeSearchResult {
   content: string;
@@ -326,6 +353,54 @@ export const searchKnowledge = async (
  */
 export const reprocessKnowledge = async (id: string): Promise<void> => {
   await apiClient.post(`/api/knowledge/${id}/reprocess`);
+};
+
+// ============ 分析模板 API ============
+
+/**
+ * 获取分析模板列表
+ */
+export const getAnalysisTemplates = async (category?: string): Promise<{ data: AnalysisTemplate[]; categories: string[] }> => {
+  const response = await apiClient.get<{ success: boolean; data: AnalysisTemplate[]; categories: string[] }>(
+    '/api/knowledge/templates',
+    { params: { category } }
+  );
+  return { data: response.data.data, categories: response.data.categories };
+};
+
+/**
+ * 获取单个分析模板
+ */
+export const getAnalysisTemplate = async (id: string): Promise<AnalysisTemplate> => {
+  const response = await apiClient.get<{ success: boolean; data: AnalysisTemplate }>(
+    `/api/knowledge/templates/${id}`
+  );
+  return response.data.data;
+};
+
+/**
+ * 创建分析模板
+ */
+export const createAnalysisTemplate = async (template: Partial<AnalysisTemplate>): Promise<AnalysisTemplate> => {
+  const response = await apiClient.post<{ success: boolean; data: AnalysisTemplate }>(
+    '/api/knowledge/templates',
+    template
+  );
+  return response.data.data;
+};
+
+/**
+ * 更新分析模板
+ */
+export const updateAnalysisTemplate = async (id: string, template: Partial<AnalysisTemplate>): Promise<void> => {
+  await apiClient.put(`/api/knowledge/templates/${id}`, template);
+};
+
+/**
+ * 删除分析模板
+ */
+export const deleteAnalysisTemplate = async (id: string): Promise<void> => {
+  await apiClient.delete(`/api/knowledge/templates/${id}`);
 };
 
 // ============ 聊天 API ============

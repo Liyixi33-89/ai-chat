@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Documents from './pages/Documents';
 import Chunks from './pages/Chunks';
 import Users from './pages/Users';
+import AnalysisTemplates from './pages/AnalysisTemplates';
 
 // 检查是否已登录
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
@@ -40,6 +41,7 @@ const App = () => {
               <Route index element={<Dashboard />} />
               <Route path="documents" element={<Documents />} />
               <Route path="documents/:knowledgeId/chunks" element={<Chunks />} />
+              <Route path="templates" element={<AnalysisTemplates />} />
               <Route path="users" element={<Users />} />
             </Route>
           </Routes>

@@ -86,6 +86,61 @@ export const categoryApi = {
   getAll: () => api.get('/admin/categories'),
 };
 
+// 分析模板管理
+export const analysisTemplateApi = {
+  // 获取所有分析模板
+  getAll: (category?: string) =>
+    api.get('/admin/analysis-templates', { params: { category } }),
+
+  // 创建分析模板
+  create: (data: {
+    name: string;
+    description?: string;
+    category?: string;
+    systemPrompt: string;
+    userPromptTemplate: string;
+    variables?: Array<{
+      name: string;
+      label: string;
+      type: 'text' | 'textarea' | 'select';
+      options?: string[];
+      required: boolean;
+      defaultValue?: string;
+    }>;
+    exampleInput?: string;
+    exampleOutput?: string;
+    isPublic?: boolean;
+    isSystem?: boolean;
+  }) => api.post('/admin/analysis-templates', data),
+
+  // 更新分析模板
+  update: (id: string, data: {
+    name?: string;
+    description?: string;
+    category?: string;
+    systemPrompt?: string;
+    userPromptTemplate?: string;
+    variables?: Array<{
+      name: string;
+      label: string;
+      type: 'text' | 'textarea' | 'select';
+      options?: string[];
+      required: boolean;
+      defaultValue?: string;
+    }>;
+    exampleInput?: string;
+    exampleOutput?: string;
+    isPublic?: boolean;
+    isSystem?: boolean;
+  }) => api.put(`/admin/analysis-templates/${id}`, data),
+
+  // 删除分析模板
+  delete: (id: string) => api.delete(`/admin/analysis-templates/${id}`),
+
+  // 初始化系统预设模板
+  initSystem: () => api.post('/admin/analysis-templates/init-system'),
+};
+
 // 向量块管理
 export const chunkApi = {
   // 获取文档的所有向量块

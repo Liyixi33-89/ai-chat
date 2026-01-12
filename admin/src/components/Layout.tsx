@@ -6,6 +6,7 @@ import {
   UserOutlined,
   LogoutOutlined,
   DatabaseOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
 
 const { Header, Sider, Content } = AntLayout;
@@ -33,6 +34,11 @@ const Layout = () => {
       label: '文档管理',
     },
     {
+      key: '/templates',
+      icon: <AppstoreOutlined />,
+      label: '分析模板',
+    },
+    {
       key: '/users',
       icon: <UserOutlined />,
       label: '用户管理',
@@ -44,6 +50,7 @@ const Layout = () => {
     const path = location.pathname;
     if (path === '/') return '/';
     if (path.startsWith('/documents')) return '/documents';
+    if (path.startsWith('/templates')) return '/templates';
     if (path.startsWith('/users')) return '/users';
     return path;
   };

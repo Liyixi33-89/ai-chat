@@ -722,13 +722,59 @@
 /* 知识库提示 */
 .knowledge-hint {
   margin-top: 16px;
-  padding: 12px 20px;
-  background: linear-gradient(135deg, #e6f7ff 0%, #f0f7ff 100%);
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%);
   border-radius: 8px;
   color: #1890ff;
-  font-size: 14px;
+  font-size: 0.875rem;
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid #91d5ff;
+}
+
+.template-hint {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%);
+  border-radius: 8px;
+  color: #52c41a;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.template-change-btn {
+  margin-left: auto;
+  padding: 4px 12px;
+  background: #52c41a;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: background 0.2s;
+}
+
+.template-change-btn:hover {
+  background: #73d13d;
+}
+
+.template-btn {
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  color: #666;
+  border-radius: 6px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.template-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: #52c41a;
+}  border: 1px solid #91d5ff;
 }

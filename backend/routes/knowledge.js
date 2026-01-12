@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import * as XLSX from 'xlsx';
 import { authMiddleware } from '../middleware/auth.js';
 import { Knowledge, VectorChunk } from '../models/index.js';
+import AnalysisTemplate from '../models/AnalysisTemplate.js';
 import { processDocument, semanticSearch } from '../services/ragService.js';
 
 /**
@@ -473,6 +474,210 @@ router.post('/:id/reprocess', authMiddleware, async (req, res) => {
     res.json({ success: true, message: '文档正在重新处理中...' });
   } catch (error) {
     console.error('重新处理文档失败:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==================== 分析模板 API ====================
+
+/**
+ * 获取公开的分析模板列表
+ * GET /api/knowledge/templates
+ */
+router.get('/templates', authMiddleware, async (req, res) => {
+  try {
+    const { category } = req.query;
+    
+    const query = {
+      $or: [
+        { isPublic: true },
+        { createdBy: req.userId },
+      ],
+    };
+    
+    if (category) {
+      query.category = category;
+    }
+
+    const templates = await AnalysisTemplate.find(query)
+      .sort({ isSystem: -1, createdAt: -1 })
+      .populate('createdBy', 'username')
+      .lean();
+
+    // 获取所有分类
+    const categories = await AnalysisTemplate.distinct('category', {
+      $or: [{ isPublic: true }, { createdBy: req.userId }],
+    });
+
+    res.json({
+      success: true,
+      data: templates.map(t => ({
+        id: t._id,
+        name: t.name,
+        description: t.description,
+        category: t.category,
+        systemPrompt: t.systemPrompt,
+        userPromptTemplate: t.userPromptTemplate,
+        variables: t.variables,
+        exampleInput: t.exampleInput,
+        exampleOutput: t.exampleOutput,
+        isSystem: t.isSystem,
+        isPublic: t.isPublic,
+        createdBy: t.createdBy?.username || '系统',
+        createdAt: t.createdAt,
+      })),
+      categories,
+    });
+  } catch (error) {
+    console.error('获取分析模板失败:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 获取单个分析模板
+ * GET /api/knowledge/templates/:id
+ */
+router.get('/templates/:id', authMiddleware, async (req, res) => {
+  try {
+    const template = await AnalysisTemplate.findById(req.params.id)
+      .populate('createdBy', 'username')
+      .lean();
+
+    if (!template) {
+      return res.status(404).json({ success: false, error: '模板不存在' });
+    }
+
+    // 检查访问权限
+    if (!template.isPublic && template.createdBy?._id?.toString() !== req.userId) {
+      return res.status(403).json({ success: false, error: '无权访问该模板' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: template._id,
+        name: template.name,
+        description: template.description,
+        category: template.category,
+        systemPrompt: template.systemPrompt,
+        userPromptTemplate: template.userPromptTemplate,
+        variables: template.variables,
+        exampleInput: template.exampleInput,
+        exampleOutput: template.exampleOutput,
+        isSystem: template.isSystem,
+        isPublic: template.isPublic,
+        createdBy: template.createdBy?.username || '系统',
+        createdAt: template.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error('获取分析模板详情失败:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 用户创建自定义分析模板
+ * POST /api/knowledge/templates
+ */
+router.post('/templates', authMiddleware, async (req, res) => {
+  try {
+    const { name, description, category, systemPrompt, userPromptTemplate, variables, exampleInput, exampleOutput } = req.body;
+
+    if (!name || !systemPrompt || !userPromptTemplate) {
+      return res.status(400).json({ success: false, error: '请填写必要信息' });
+    }
+
+    const template = new AnalysisTemplate({
+      name,
+      description,
+      category: category || '自定义',
+      systemPrompt,
+      userPromptTemplate,
+      variables: variables || [],
+      exampleInput,
+      exampleOutput,
+      isPublic: false, // 用户创建的默认私有
+      isSystem: false,
+      createdBy: req.userId,
+    });
+
+    await template.save();
+
+    res.json({
+      success: true,
+      data: {
+        id: template._id,
+        name: template.name,
+      },
+      message: '模板创建成功',
+    });
+  } catch (error) {
+    console.error('创建分析模板失败:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 用户更新自己的分析模板
+ * PUT /api/knowledge/templates/:id
+ */
+router.put('/templates/:id', authMiddleware, async (req, res) => {
+  try {
+    const template = await AnalysisTemplate.findById(req.params.id);
+
+    if (!template) {
+      return res.status(404).json({ success: false, error: '模板不存在' });
+    }
+
+    // 只能修改自己创建的非系统模板
+    if (template.isSystem || template.createdBy?.toString() !== req.userId) {
+      return res.status(403).json({ success: false, error: '无权修改该模板' });
+    }
+
+    const { name, description, category, systemPrompt, userPromptTemplate, variables, exampleInput, exampleOutput } = req.body;
+
+    if (name) template.name = name;
+    if (description !== undefined) template.description = description;
+    if (category) template.category = category;
+    if (systemPrompt) template.systemPrompt = systemPrompt;
+    if (userPromptTemplate) template.userPromptTemplate = userPromptTemplate;
+    if (variables) template.variables = variables;
+    if (exampleInput !== undefined) template.exampleInput = exampleInput;
+    if (exampleOutput !== undefined) template.exampleOutput = exampleOutput;
+
+    await template.save();
+
+    res.json({ success: true, message: '模板更新成功' });
+  } catch (error) {
+    console.error('更新分析模板失败:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 用户删除自己的分析模板
+ * DELETE /api/knowledge/templates/:id
+ */
+router.delete('/templates/:id', authMiddleware, async (req, res) => {
+  try {
+    const template = await AnalysisTemplate.findById(req.params.id);
+
+    if (!template) {
+      return res.status(404).json({ success: false, error: '模板不存在' });
+    }
+
+    // 只能删除自己创建的非系统模板
+    if (template.isSystem || template.createdBy?.toString() !== req.userId) {
+      return res.status(403).json({ success: false, error: '无权删除该模板' });
+    }
+
+    await AnalysisTemplate.findByIdAndDelete(req.params.id);
+
+    res.json({ success: true, message: '模板删除成功' });
+  } catch (error) {
+    console.error('删除分析模板失败:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
