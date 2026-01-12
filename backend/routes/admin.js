@@ -14,6 +14,7 @@ import Knowledge from '../models/Knowledge.js';
 import VectorChunk from '../models/VectorChunk.js';
 import CategoryPrompt from '../models/CategoryPrompt.js';
 import AnalysisTemplate from '../models/AnalysisTemplate.js';
+import Entry from '../models/Entry.js';
 import { getEmbedding, processDocument } from '../services/ragService.js';
 import { classifyDocument } from '../services/classifyService.js';
 
@@ -1174,5 +1175,233 @@ function splitTextIntoChunks(text, chunkSize = 500, overlap = 50) {
 
   return chunks.filter(chunk => chunk.length > 0);
 }
+
+// ==================== 词条管理 API ====================
+
+// 获取词条列表
+router.get('/admin/entries', adminAuth, async (req, res) => {
+  try {
+    const { page = 1, pageSize = 20, keyword, category, isActive } = req.query;
+    
+    const query = {};
+    
+    if (keyword) {
+      query.$or = [
+        { keywords: { $regex: keyword, $options: 'i' } },
+        { question: { $regex: keyword, $options: 'i' } },
+        { answer: { $regex: keyword, $options: 'i' } }
+      ];
+    }
+    
+    if (category) {
+      query.category = category;
+    }
+    
+    if (isActive !== undefined) {
+      query.isActive = isActive === 'true';
+    }
+    
+    const total = await Entry.countDocuments(query);
+    const entries = await Entry.find(query)
+      .sort({ priority: -1, createdAt: -1 })
+      .skip((parseInt(page) - 1) * parseInt(pageSize))
+      .limit(parseInt(pageSize))
+      .populate('createdBy', 'username');
+    
+    // 获取所有分类
+    const categories = await Entry.distinct('category');
+    
+    res.json({
+      entries,
+      total,
+      page: parseInt(page),
+      pageSize: parseInt(pageSize),
+      totalPages: Math.ceil(total / parseInt(pageSize)),
+      categories
+    });
+  } catch (error) {
+    console.error('获取词条列表失败:', error);
+    res.status(500).json({ error: '获取词条列表失败' });
+  }
+});
+
+// 创建词条
+router.post('/admin/entries', adminAuth, async (req, res) => {
+  try {
+    const { keywords, question, answer, matchType, priority, category, isActive, remark } = req.body;
+    
+    if (!keywords || keywords.length === 0) {
+      return res.status(400).json({ error: '关键词不能为空' });
+    }
+    
+    if (!question || !answer) {
+      return res.status(400).json({ error: '问题和答案不能为空' });
+    }
+    
+    const entry = new Entry({
+      keywords: Array.isArray(keywords) ? keywords : keywords.split(',').map(k => k.trim()),
+      question,
+      answer,
+      matchType: matchType || 'contains',
+      priority: priority || 0,
+      category: category || '默认',
+      isActive: isActive !== false,
+      remark,
+      createdBy: req.user._id
+    });
+    
+    await entry.save();
+    
+    res.status(201).json({ 
+      success: true, 
+      message: '词条创建成功',
+      entry 
+    });
+  } catch (error) {
+    console.error('创建词条失败:', error);
+    res.status(500).json({ error: '创建词条失败', details: error.message });
+  }
+});
+
+// 批量删除词条 - 必须在 :id 路由之前
+router.post('/admin/entries/batch-delete', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body;
+    
+    if (!ids || ids.length === 0) {
+      return res.status(400).json({ error: '请选择要删除的词条' });
+    }
+    
+    const result = await Entry.deleteMany({ _id: { $in: ids } });
+    
+    res.json({ 
+      success: true, 
+      message: `已删除 ${result.deletedCount} 个词条` 
+    });
+  } catch (error) {
+    console.error('批量删除词条失败:', error);
+    res.status(500).json({ error: '批量删除词条失败' });
+  }
+});
+
+// 测试词条匹配 - 必须在 :id 路由之前
+router.post('/admin/entries/test-match', adminAuth, async (req, res) => {
+  try {
+    const { input } = req.body;
+    
+    if (!input) {
+      return res.status(400).json({ error: '请输入测试内容' });
+    }
+    
+    const matchedEntry = await Entry.findMatchingEntry(input);
+    
+    if (matchedEntry) {
+      res.json({
+        matched: true,
+        entry: matchedEntry,
+        message: `匹配到词条: ${matchedEntry.question}`
+      });
+    } else {
+      res.json({
+        matched: false,
+        message: '未匹配到任何词条'
+      });
+    }
+  } catch (error) {
+    console.error('测试词条匹配失败:', error);
+    res.status(500).json({ error: '测试词条匹配失败' });
+  }
+});
+
+// 获取单个词条详情
+router.get('/admin/entries/:id', adminAuth, async (req, res) => {
+  try {
+    const entry = await Entry.findById(req.params.id).populate('createdBy', 'username');
+    
+    if (!entry) {
+      return res.status(404).json({ error: '词条不存在' });
+    }
+    
+    res.json(entry);
+  } catch (error) {
+    console.error('获取词条详情失败:', error);
+    res.status(500).json({ error: '获取词条详情失败' });
+  }
+});
+
+// 更新词条
+router.put('/admin/entries/:id', adminAuth, async (req, res) => {
+  try {
+    const { keywords, question, answer, matchType, priority, category, isActive, remark } = req.body;
+    
+    const entry = await Entry.findById(req.params.id);
+    
+    if (!entry) {
+      return res.status(404).json({ error: '词条不存在' });
+    }
+    
+    // 更新字段
+    if (keywords) {
+      entry.keywords = Array.isArray(keywords) ? keywords : keywords.split(',').map(k => k.trim());
+    }
+    if (question !== undefined) entry.question = question;
+    if (answer !== undefined) entry.answer = answer;
+    if (matchType !== undefined) entry.matchType = matchType;
+    if (priority !== undefined) entry.priority = priority;
+    if (category !== undefined) entry.category = category;
+    if (isActive !== undefined) entry.isActive = isActive;
+    if (remark !== undefined) entry.remark = remark;
+    
+    await entry.save();
+    
+    res.json({ 
+      success: true, 
+      message: '词条更新成功',
+      entry 
+    });
+  } catch (error) {
+    console.error('更新词条失败:', error);
+    res.status(500).json({ error: '更新词条失败', details: error.message });
+  }
+});
+
+// 删除词条
+router.delete('/admin/entries/:id', adminAuth, async (req, res) => {
+  try {
+    const entry = await Entry.findByIdAndDelete(req.params.id);
+    
+    if (!entry) {
+      return res.status(404).json({ error: '词条不存在' });
+    }
+    
+  res.json({ success: true, message: '词条删除成功' });
+  } catch (error) {
+    console.error('删除词条失败:', error);
+    res.status(500).json({ error: '删除词条失败' });
+  }
+});
+
+// 切换词条启用状态
+router.put('/admin/entries/:id/toggle', adminAuth, async (req, res) => {
+  try {
+    const entry = await Entry.findById(req.params.id);
+    
+    if (!entry) {
+      return res.status(404).json({ error: '词条不存在' });
+    }
+    
+    entry.isActive = !entry.isActive;
+    await entry.save();
+    
+    res.json({ 
+      success: true, 
+      message: entry.isActive ? '词条已启用' : '词条已禁用',
+      isActive: entry.isActive
+    });
+  } catch (error) {
+    console.error('切换词条状态失败:', error);
+    res.status(500).json({ error: '切换词条状态失败' });
+  }
+});
 
 export default router;

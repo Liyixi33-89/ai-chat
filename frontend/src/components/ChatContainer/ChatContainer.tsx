@@ -138,7 +138,16 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isLoading = false, u
           />
         </div>
       )}
-      
+            {/* 用户头像 - 右侧 */}
+      {isUser && (
+        <div className="message-avatar message-avatar-right">
+          <Avatar 
+            size={40} 
+            icon={<UserOutlined />} 
+            className="avatar-user"
+          />
+        </div>
+      )}
       {/* 消息内容 */}
       <div className={`message-content-wrapper ${isUser ? 'content-user' : 'content-assistant'}`}>
         <div className="message-header">
@@ -179,17 +188,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isLoading = false, u
           )}
         </div>
       </div>
-      
-      {/* 用户头像 - 右侧 */}
-      {isUser && (
-        <div className="message-avatar message-avatar-right">
-          <Avatar 
-            size={40} 
-            icon={<UserOutlined />} 
-            className="avatar-user"
-          />
-        </div>
-      )}
+    
     </div>
   );
 };

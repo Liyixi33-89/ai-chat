@@ -6,7 +6,7 @@ import express from 'express';
 import cors from 'cors';
 import { connectDB } from './config/database.js';
 import { authMiddleware } from './middleware/auth.js';
-import { Session, Message } from './models/index.js';
+import { Session, Message, Entry } from './models/index.js';
 import authRoutes from './routes/auth.js';
 import sessionRoutes from './routes/sessions.js';
 import messageRoutes from './routes/messages.js';
@@ -183,6 +183,83 @@ app.post('/api/chat/stream', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'messages 参数必须是数组' });
   }
 
+  const userId = req.userId;
+  const lastUserMessage = messages[messages.length - 1];
+
+  // ========== 词条匹配检查 ==========
+  // 先检查用户输入是否匹配预设词条
+  if (lastUserMessage?.role === 'user') {
+    try {
+      const matchedEntry = await Entry.findMatchingEntry(lastUserMessage.content);
+      
+      if (matchedEntry) {
+        console.log(`词条匹配成功: ${matchedEntry.question}`);
+        
+        // 设置 SSE 响应头
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.flushHeaders();
+        
+        // 发送词条匹配信息
+        res.write(`event: entry_match\ndata: ${JSON.stringify({
+          matched: true,
+          entryId: matchedEntry._id,
+          question: matchedEntry.question,
+          category: matchedEntry.category
+        })}\n\n`);
+        
+        // 模拟流式输出预设答案（让用户体验更自然）
+        const answer = matchedEntry.answer;
+        const chunkSize = 5; // 每次发送的字符数
+        
+        for (let i = 0; i < answer.length; i += chunkSize) {
+          const chunk = answer.slice(i, i + chunkSize);
+          res.write(`event: message\ndata: ${JSON.stringify({
+            content: chunk,
+            done: false,
+          })}\n\n`);
+          
+          // 添加小延迟，模拟打字效果
+          await new Promise(resolve => setTimeout(resolve, 30));
+        }
+        
+        // 保存消息到数据库
+        if (sessionId) {
+          try {
+            const session = await Session.findOne({ _id: sessionId, userId });
+            if (session) {
+              const existingCount = await Message.countDocuments({ sessionId });
+              
+              await Message.insertMany([
+                { sessionId, role: 'user', content: lastUserMessage.content },
+                { sessionId, role: 'assistant', content: answer },
+              ]);
+              
+              if (existingCount === 0) {
+                session.title = lastUserMessage.content.substring(0, 30) + 
+                  (lastUserMessage.content.length > 30 ? '...' : '');
+              }
+              session.updatedAt = new Date();
+              await session.save();
+            }
+          } catch (dbError) {
+            console.error('保存词条消息到数据库失败:', dbError);
+          }
+        }
+        
+        res.write(`event: done\ndata: ${JSON.stringify({ done: true })}\n\n`);
+        res.end();
+        return;
+      }
+    } catch (entryError) {
+      console.error('词条匹配检查失败:', entryError);
+      // 词条匹配失败不影响正常流程，继续走 AI 回复
+    }
+  }
+  // ========== 词条匹配检查结束 ==========
+
   // 设置 SSE 响应头
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -191,8 +268,6 @@ app.post('/api/chat/stream', authMiddleware, async (req, res) => {
   res.flushHeaders();
 
   let fullContent = '';
-  const userId = req.userId;
-  const lastUserMessage = messages[messages.length - 1];
   let finalMessages = [...messages];
   let contexts = [];
 

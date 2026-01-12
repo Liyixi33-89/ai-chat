@@ -174,4 +174,70 @@ export const statsApi = {
   getOverview: () => api.get('/admin/stats'),
 };
 
+// 词条管理
+export const entryApi = {
+  // 获取词条列表
+  getAll: (params?: { page?: number; pageSize?: number; keyword?: string; category?: string; isActive?: string }) =>
+    api.get('/admin/entries', { params }).then(res => res.data),
+
+  // 获取单个词条详情
+  getById: (id: string) => api.get(`/admin/entries/${id}`).then(res => res.data),
+
+  // 创建词条
+  create: (data: {
+    keywords: string[];
+    question: string;
+    answer: string;
+    matchType?: 'exact' | 'contains' | 'regex';
+    priority?: number;
+    category?: string;
+    isActive?: boolean;
+    remark?: string;
+  }) => api.post('/admin/entries', data).then(res => res.data),
+
+  // 更新词条
+  update: (id: string, data: {
+    keywords?: string[];
+    question?: string;
+    answer?: string;
+    matchType?: 'exact' | 'contains' | 'regex';
+    priority?: number;
+    category?: string;
+    isActive?: boolean;
+    remark?: string;
+  }) => api.put(`/admin/entries/${id}`, data).then(res => res.data),
+
+  // 删除词条
+  delete: (id: string) => api.delete(`/admin/entries/${id}`).then(res => res.data),
+
+  // 批量删除词条
+  batchDelete: (ids: string[]) => api.post('/admin/entries/batch-delete', { ids }).then(res => res.data),
+
+  // 切换词条启用状态
+  toggle: (id: string) => api.put(`/admin/entries/${id}/toggle`).then(res => res.data),
+
+  // 测试词条匹配
+  testMatch: (input: string) => api.post('/admin/entries/test-match', { input }).then(res => res.data),
+};
+
+// 统一导出 adminApi（方便在页面中使用）
+export const adminApi = {
+  ...knowledgeApi,
+  ...categoryPromptApi,
+  ...categoryApi,
+  ...analysisTemplateApi,
+  ...chunkApi,
+  ...userApi,
+  ...statsApi,
+  // 词条管理
+  getEntries: entryApi.getAll,
+  getEntry: entryApi.getById,
+  createEntry: entryApi.create,
+  updateEntry: entryApi.update,
+  deleteEntry: entryApi.delete,
+  batchDeleteEntries: entryApi.batchDelete,
+  toggleEntry: entryApi.toggle,
+  testEntryMatch: entryApi.testMatch,
+};
+
 export default api;
