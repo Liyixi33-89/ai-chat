@@ -32,6 +32,12 @@ const knowledgeSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  // 文档分类
+  category: {
+    type: String,
+    default: '未分类',
+    index: true,
+  },
   chunkCount: {
     type: Number,
     default: 0,

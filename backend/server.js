@@ -38,6 +38,15 @@ const formatSize = (bytes) => {
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
 };
 
+// 嵌入模型关键字列表（这些模型不应该出现在聊天模型列表中）
+const EMBEDDING_MODEL_KEYWORDS = ['embed', 'embedding'];
+
+// 判断是否为嵌入模型
+const isEmbeddingModel = (modelName) => {
+  const lowerName = modelName.toLowerCase();
+  return EMBEDDING_MODEL_KEYWORDS.some(keyword => lowerName.includes(keyword));
+};
+
 // 获取可用模型列表（无需认证）
 app.get('/api/models', async (req, res) => {
   try {
@@ -45,14 +54,17 @@ app.get('/api/models', async (req, res) => {
     
     if (response.ok) {
       const data = await response.json();
-      const models = (data.models || []).map((model) => ({
-        name: model.name,
-        size: formatSize(model.size),
-        sizeBytes: model.size,
-        modifiedAt: model.modified_at,
-        family: model.details?.family || 'unknown',
-        parameterSize: model.details?.parameter_size || 'unknown',
-      }));
+      const models = (data.models || [])
+        // 过滤掉嵌入模型
+        .filter((model) => !isEmbeddingModel(model.name))
+        .map((model) => ({
+          name: model.name,
+          size: formatSize(model.size),
+          sizeBytes: model.size,
+          modifiedAt: model.modified_at,
+          family: model.details?.family || 'unknown',
+          parameterSize: model.details?.parameter_size || 'unknown',
+        }));
       models.sort((a, b) => a.sizeBytes - b.sizeBytes);
       res.json({ models, defaultModel: DEFAULT_MODEL });
     } else {
@@ -341,6 +353,31 @@ app.use((req, res, next) => {
     }
   });
   next();
+});
+
+// 全局错误处理中间件
+app.use((err, req, res, next) => {
+  console.error('全局错误:', err);
+  
+  // 如果响应已经发送，交给默认处理
+  if (res.headersSent) {
+    return next(err);
+  }
+  
+  res.status(500).json({ 
+    error: err.message || '服务器内部错误',
+    code: 'INTERNAL_ERROR'
+  });
+});
+
+// 捕获未处理的 Promise 拒绝
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('未处理的 Promise 拒绝:', reason);
+});
+
+// 捕获未捕获的异常
+process.on('uncaughtException', (err) => {
+  console.error('未捕获的异常:', err);
 });
 
 // 启动服务

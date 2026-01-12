@@ -35,14 +35,14 @@ export const authApi = {
 // 知识库文档管理
 export const knowledgeApi = {
   // 获取所有文档列表（管理员）
-  getAll: (params?: { page?: number; limit?: number; search?: string }) =>
+  getAll: (params?: { page?: number; limit?: number; search?: string; category?: string }) =>
     api.get('/admin/knowledge', { params }),
   
   // 获取单个文档详情
   getById: (id: string) => api.get(`/admin/knowledge/${id}`),
   
   // 更新文档信息
-  update: (id: string, data: { name?: string; content?: string }) =>
+  update: (id: string, data: { name?: string; content?: string; category?: string }) =>
     api.put(`/admin/knowledge/${id}`, data),
   
   // 删除文档
@@ -53,6 +53,37 @@ export const knowledgeApi = {
     api.post('/admin/knowledge/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
+
+  // 批量更新分类
+  batchUpdateCategory: (documentIds: string[], category: string) =>
+    api.put('/admin/knowledge/batch-category', { documentIds, category }),
+
+  // AI 自动分类
+  autoClassify: (documentIds: string[], promptId?: string) =>
+    api.post('/admin/knowledge/auto-classify', { documentIds, promptId }),
+};
+
+// 分类 Prompt 管理
+export const categoryPromptApi = {
+  // 获取所有分类 Prompt
+  getAll: () => api.get('/admin/category-prompts'),
+
+  // 创建分类 Prompt
+  create: (data: { name: string; prompt: string; categories: string[]; isDefault?: boolean }) =>
+    api.post('/admin/category-prompts', data),
+
+  // 更新分类 Prompt
+  update: (id: string, data: { name?: string; prompt?: string; categories?: string[]; isDefault?: boolean }) =>
+    api.put(`/admin/category-prompts/${id}`, data),
+
+  // 删除分类 Prompt
+  delete: (id: string) => api.delete(`/admin/category-prompts/${id}`),
+};
+
+// 分类管理
+export const categoryApi = {
+  // 获取所有分类
+  getAll: () => api.get('/admin/categories'),
 };
 
 // 向量块管理

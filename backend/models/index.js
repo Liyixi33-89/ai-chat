@@ -6,3 +6,4 @@ export { default as Session } from './Session.js';
 export { default as Message } from './Message.js';
 export { default as Knowledge } from './Knowledge.js';
 export { default as VectorChunk } from './VectorChunk.js';
+export { default as CategoryPrompt } from './CategoryPrompt.js';
